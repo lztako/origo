@@ -1,0 +1,11 @@
+:root[data-theme="legacy"] {
+  --bg: #0a0d0b;
+  --bg-soft: #101612;
+  --panel: #111814;
+  --panel-border: #1f2d25;
+  --text: #e8f3eb;
+  --text-muted: #8ca697;
+  --accent: #ffbd59;
+  --accent-soft: rgba(255, 189, 89, 0.14);
+  --danger: #ff7272;
+}

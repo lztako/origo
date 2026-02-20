@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supabase Contracts Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="theme-init.js?v=20260217-theme-library-v1"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
+  <link rel="stylesheet" href="styles.css?v=20260220-market-product-custom-v2">
+  <link rel="stylesheet" href="themes/theme-legacy.css?v=20260217-theme-library-v1">
+  <link rel="stylesheet" href="themes/theme-mono.css?v=20260217-theme-library-v1">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <nav class="menu">
+        <a class="menu-item active" href="#" data-view-target="market-map">Market</a>
+        <a class="menu-item" href="#" data-view-target="product-catalog">Product Catalog</a>
+        <a class="menu-item" href="#" data-view-target="overview">Overview</a>
+        <a class="menu-item" href="#" data-view-target="dashboard">Operation</a>
+        <a class="menu-item" href="#" data-view-target="stock">Stock</a>
+        <a class="menu-item" href="#" data-view-target="finance">Finance</a>
+        <a class="menu-item" href="#" data-view-target="ai-agent">AI Agent</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <p>Last sync</p>
+        <strong id="lastSyncLabel">just now</strong>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <p id="pageEyebrow" class="eyebrow">OPERATION</p>
+          <h2 id="pageTitle">EXECUTION DASHBOARD</h2>
+        </div>
+        <button id="productCatalogAddBtn" class="refresh-btn hidden" type="button">Add Product</button>
+      </header>
+
+      <section id="metricsGrid" class="metric-grid" aria-label="Key metrics">
+        <article class="metric-card">
+          <p id="metricContractLinesLabel">Contract Lines</p>
+          <h3 id="metricContractLinesValue">-</h3>
+        </article>
+        <article class="metric-card">
+          <p id="metricCompletedLabel">Completed</p>
+          <h3 id="metricCompletedValue">-</h3>
+        </article>
+        <article class="metric-card">
+          <p id="metricPendingLabel">Pending</p>
+          <h3 id="metricPendingValue">-</h3>
+        </article>
+        <article class="metric-card">
+          <p id="metricOverdueLabel">Overdue</p>
+          <h3 id="metricOverdueValue">-</h3>
+        </article>
+      </section>
+
+      <section id="deliveriesPanel" class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Recent Deliveries (with Contract Relation)</h3>
+            <p>Delivery volume by month</p>
+          </div>
+        </div>
+
+        <div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+        <div class="chart-block">
+          <div class="chart-head">
+            <h4>Delivery Volume by Month</h4>
+            <div class="chart-actions">
+              <label class="chart-range">
+                <span>Range</span>
+                <select id="deliveryChartRange">
+                  <option value="3">3M</option>
+                  <option value="6">6M</option>
+                  <option value="12" selected>12M</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="deliveryVolumeChart" aria-label="Delivery volume by month"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="overdueOnlyPanel" class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Overdue Contracts</h3>
+            <p>Due date passed and progress below 100%</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th>Customer</th>
+                <th>Contract Ton</th>
+                <th>Delivered Ton</th>
+                <th>Remaining Ton</th>
+                <th>Progress</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="overdueOnlyBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="stockTrendPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Stock by Factory</h3>
+            <p>Vertical bar comparison of stock quantity across factories</p>
+          </div>
+        </div>
+
+        <div id="stockErrorBanner" class="error-banner hidden" role="alert"></div>
+
+        <div class="chart-block">
+          <div class="chart-head">
+            <h4>Factory Stock (Vertical Bar)</h4>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="stockFactoryTrendChart" aria-label="Stock vertical bar chart by factory"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="stockTypePanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Stock by Type</h3>
+            <p>Type-level stock totals</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Share</th>
+              </tr>
+            </thead>
+            <tbody id="stockTypeTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="marketMapPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Market Intelligence</h3>
+            <p>Dark choropleth map (Total Trades by country)</p>
+          </div>
+          <div id="marketProductDropdown" class="market-map-product-control">
+            <button
+              id="marketProductTrigger"
+              class="market-map-product-trigger"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              Refined Sugar (LIN)
+            </button>
+            <div id="marketProductMenu" class="market-map-product-menu hidden" role="listbox" aria-label="Select market product"></div>
+          </div>
+        </div>
+
+        <div id="marketMapErrorBanner" class="error-banner hidden" role="alert"></div>
+
+        <div class="map-block">
+          <div class="map-shell">
+            <div id="marketMapContent" class="market-map-content">
+              <div id="marketMapCanvas" class="map-canvas" aria-label="Interactive world choropleth map"></div>
+              <div id="marketMapLoader" class="map-loader">
+                <div class="loader"></div>
+                <span>Loading World Data...</span>
+              </div>
+              <div id="marketMapLegend" class="market-map-legend" aria-label="Trade intensity legend"></div>
+              <div id="marketMapLockedOverlay" class="market-locked-overlay hidden" aria-hidden="true">
+                <div class="market-locked-pill">
+                  <span class="market-locked-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                      <path d="M7 10V8a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h1Zm2 0h6V8a3 3 0 0 0-6 0v2Z" />
+                    </svg>
+                  </span>
+                  <span>LOCKED</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <section id="marketTablePanel" class="panel hidden">
+        <div id="marketTableContent" class="market-table-content">
+          <div class="table-wrap market-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Status</th>
+                  <th>Customer</th>
+                  <th>Country</th>
+                  <th>Product Description</th>
+                  <th>Trades</th>
+                </tr>
+              </thead>
+              <tbody id="marketTableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <p id="marketPaginationInfo">Showing 0-0 of 0</p>
+            <div class="pagination-actions">
+              <button id="marketPrevBtn" class="refresh-btn ghost-btn" type="button">Prev</button>
+              <button id="marketNextBtn" class="refresh-btn ghost-btn" type="button">Next</button>
+            </div>
+          </div>
+          <div id="marketTableLockedOverlay" class="market-locked-overlay hidden" aria-hidden="true">
+            <div class="market-locked-pill">
+              <span class="market-locked-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                  <path d="M7 10V8a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h1Zm2 0h6V8a3 3 0 0 0-6 0v2Z" />
+                </svg>
+              </span>
+              <span>LOCKED</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="productCatalogPanel" class="panel hidden">
+        <div id="productCatalogErrorBanner" class="error-banner hidden" role="alert"></div>
+
+        <section id="productCatalogEditor" class="product-editor hidden" aria-label="Product editor">
+          <div class="product-editor-card" role="dialog" aria-modal="true" aria-labelledby="productCatalogEditorTitle">
+            <div class="product-editor-head">
+              <h4 id="productCatalogEditorTitle">Add Product</h4>
+            </div>
+            <div class="product-editor-grid">
+              <label class="product-editor-field">
+                <span>Product Name *</span>
+                <input id="productCatalogNameInput" type="text" placeholder="Enter product name" />
+              </label>
+              <label class="product-editor-field">
+                <span>Spec Ref (optional)</span>
+                <input id="productCatalogHsCodeInput" type="text" placeholder="Enter spec ref" />
+              </label>
+              <label class="product-editor-field product-editor-field-full">
+                <span>Description</span>
+                <textarea id="productCatalogDescriptionInput" rows="3" placeholder="Enter short product description"></textarea>
+              </label>
+              <label class="product-editor-field">
+                <span>Hero Product</span>
+                <input id="productCatalogHeroInput" type="checkbox" />
+              </label>
+            </div>
+            <div class="product-editor-actions">
+              <button id="productCatalogSaveBtn" class="refresh-btn" type="button">Save</button>
+              <button id="productCatalogCancelBtn" class="refresh-btn ghost-btn" type="button">Cancel</button>
+            </div>
+          </div>
+        </section>
+
+        <div id="productCatalogGallery" class="product-gallery" aria-label="Product gallery">
+        </div>
+
+        <div id="productCatalogDetailOverlay" class="product-detail-overlay hidden" aria-hidden="true">
+          <aside id="productCatalogDetailDrawer" class="product-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="productCatalogDetailTitle">
+            <div class="product-detail-head">
+              <h4 id="productCatalogDetailTitle">Product Detail</h4>
+              <button id="productCatalogDetailCloseBtn" class="refresh-btn ghost-btn" type="button">Close</button>
+            </div>
+            <div class="product-detail-body">
+              <div class="product-detail-image-wrap">
+                <img id="productCatalogDetailImage" class="product-detail-image hidden" alt="Product image preview" />
+                <div id="productCatalogDetailImagePlaceholder" class="product-detail-image-placeholder">IMAGE</div>
+              </div>
+              <div class="product-detail-grid">
+                <p><span>Brand</span><strong id="productCatalogDetailHero">-</strong></p>
+                <p><span>Spec Ref</span><strong id="productCatalogDetailHsCode">-</strong></p>
+                <p><span>Spec Date</span><strong id="productCatalogDetailUpdatedAt">-</strong></p>
+                <p><span>Image</span><a id="productCatalogDetailImageLink" href="#" target="_blank" rel="noopener noreferrer">-</a></p>
+              </div>
+              <div class="product-detail-description">
+                <h5>Description</h5>
+                <div id="productCatalogDetailDescription" class="product-detail-description-list">
+                  <div class="product-detail-description-item">-</div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="financeTrendPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Invoice USD Trend</h3>
+            <p>Monthly USD value from finance invoices</p>
+          </div>
+        </div>
+
+        <div id="financeErrorBanner" class="error-banner hidden" role="alert"></div>
+
+        <div class="chart-block">
+          <div class="chart-head">
+            <h4>Monthly USD</h4>
+            <div class="chart-actions">
+              <label class="chart-range">
+                <span>Range</span>
+                <select id="financeChartRange">
+                  <option value="3">3M</option>
+                  <option value="6">6M</option>
+                  <option value="12" selected>12M</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="financeTrendChart" aria-label="Monthly USD trend"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="financeCustomerPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Finance Invoice List</h3>
+            <p>Latest rows from finance_invoices with key columns only</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Customer</th>
+                <th>Contract</th>
+                <th>Tons</th>
+                <th>USD</th>
+              </tr>
+            </thead>
+            <tbody id="financeCustomerBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <p id="financePaginationInfo">Showing 0-0 of 0</p>
+          <div class="pagination-actions">
+            <button id="financePrevBtn" class="refresh-btn ghost-btn" type="button">Prev</button>
+            <button id="financeNextBtn" class="refresh-btn ghost-btn" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="overviewMetricsGrid" class="metric-grid hidden" aria-label="Overview key metrics">
+        <article class="metric-card">
+          <p>Delivered Tons</p>
+          <h3 id="overviewKpiDelivered">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Backlog Tons</p>
+          <h3 id="overviewKpiBacklog">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Overdue Contracts</p>
+          <h3 id="overviewKpiOverdue">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Invoice USD</p>
+          <h3 id="overviewKpiInvoiceUsd">-</h3>
+        </article>
+      </section>
+
+      <div id="overviewErrorBanner" class="error-banner hidden" role="alert"></div>
+
+      <section id="overviewTrendPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Delivered Trend</h3>
+            <p>Delivered tons by month</p>
+          </div>
+          <div class="chart-actions">
+            <label class="chart-range">
+              <span>Range</span>
+              <select id="overviewTrendRange">
+                <option value="3">3M</option>
+                <option value="6">6M</option>
+                <option value="12" selected>12M</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-wrap">
+            <canvas id="overviewTrendChart" aria-label="Delivered tons trend (vertical bar)"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="overviewCustomerRow" class="overview-customer-row hidden">
+        <div id="overviewTopTonsPanel" class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Top Customers by Tons (Operation)</h3>
+              <p>Ranked by delivered tons</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Tons</th>
+                </tr>
+              </thead>
+              <tbody id="overviewTopTonsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="overviewTopUsdPanel" class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Top Customers by USD (Finance)</h3>
+              <p>Ranked by invoice USD</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>USD</th>
+                </tr>
+              </thead>
+              <tbody id="overviewTopUsdBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="overviewProductPanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Sale by Product (Tons)</h3>
+            <p>Horizontal bar ranked by total tons</p>
+          </div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-wrap">
+            <canvas id="overviewProductChart" aria-label="Sale by product (horizontal bar)"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section id="overviewOverduePanel" class="panel hidden">
+        <div class="panel-head">
+          <div>
+            <h3>Overdue Contracts</h3>
+            <p>Copied layout from Operation</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th>Customer</th>
+                <th>Contract Ton</th>
+                <th>Delivered Ton</th>
+                <th>Remaining Ton</th>
+                <th>Progress</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="overviewOverdueBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="aiAgentPanel" class="hidden">
+        <div id="aiAgentErrorBanner" class="error-banner hidden" role="alert"></div>
+
+        <div class="ai-chat-layout ai-chat-layout-single ai-chat-layout-plain">
+          <div class="ai-chat-shell">
+            <div id="aiEmptyState" class="ai-empty-state">What can I help with?</div>
+            <div id="aiChatBody" class="ai-chat-body" aria-live="polite"></div>
+            <div class="ai-chat-composer">
+              <textarea
+                id="aiChatInput"
+                rows="1"
+                placeholder="Message AI Agent"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="app.js?v=20260220-ai-claude-only-v1"></script>
+</body>
+</html>

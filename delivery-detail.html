@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delivery Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="theme-init.js?v=20260217-theme-library-v1"></script>
+  <style>
+    :root {
+      --bg: #0a0d0b;
+      --panel: #111814;
+      --panel-border: #1f2d25;
+      --text: #e8f3eb;
+      --text-muted: #8ca697;
+      --accent: #ffbd59;
+      --danger: #ff7272;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", "Trebuchet MS", "Tahoma", sans-serif;
+      background:
+        radial-gradient(65rem 35rem at 120% -10%, rgba(255, 189, 89, 0.14), transparent 42%),
+        radial-gradient(45rem 25rem at -20% 120%, rgba(64, 150, 255, 0.08), transparent 42%),
+        var(--bg);
+      color: var(--text);
+      padding: 1.25rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .title-wrap p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .title-wrap h1 {
+      margin: 0.35rem 0 0;
+      font-size: clamp(1.2rem, 2vw, 1.9rem);
+    }
+
+    .back-link {
+      color: var(--text);
+      text-decoration: none;
+      border: 1px solid #4d3b1e;
+      border-radius: 0.65rem;
+      padding: 0.6rem 0.92rem;
+      background: #251c11;
+      white-space: nowrap;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .back-link:hover,
+    .back-link:focus-visible,
+    .back-link:active {
+      border-color: var(--accent);
+    }
+
+    .error {
+      border: 1px solid rgba(255, 114, 114, 0.35);
+      background: rgba(255, 114, 114, 0.12);
+      color: #ffb9b9;
+      border-radius: 0.7rem;
+      padding: 0.75rem 0.9rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.8rem;
+      margin-bottom: 1rem;
+    }
+
+    .card {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.85rem;
+      background: var(--panel);
+      padding: 0.85rem 0.95rem;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    .card strong {
+      display: block;
+      margin-top: 0.35rem;
+      font-size: 1rem;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .panel {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.9rem;
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .panel h2 {
+      margin: 0;
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 0.95rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 0.72rem 1rem;
+      font-size: 0.84rem;
+      border-bottom: 1px solid #1f2c25;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 0.75rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    td.number-cell {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .muted {
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 0.9rem;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="themes/theme-legacy.css?v=20260217-theme-library-v1">
+  <link rel="stylesheet" href="themes/theme-mono.css?v=20260217-theme-library-v1">
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="title-wrap">
+        <p>Operation / Delivery History</p>
+        <h1 id="pageTitle">Loading...</h1>
+      </div>
+      <a class="back-link" href="index.html?view=dashboard">Back to Operation</a>
+    </div>
+
+    <div id="errorBox" class="error" role="alert"></div>
+
+    <section class="grid" aria-label="Contract summary">
+      <article class="card">
+        <p>Contract</p>
+        <strong id="contractIdValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Customer</p>
+        <strong id="customerValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Contract Ton</p>
+        <strong id="plannedTonValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Delivered Ton</p>
+        <strong id="deliveredTonValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Remaining Ton</p>
+        <strong id="remainingTonValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Progress</p>
+        <strong id="progressValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Due Date</p>
+        <strong id="dueDateValue">-</strong>
+      </article>
+      <article class="card">
+        <p>Deliveries</p>
+        <strong id="deliveryCountValue">-</strong>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Delivery History</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Delivery ID</th>
+              <th>Date</th>
+              <th>Job</th>
+              <th>Quantity</th>
+            </tr>
+          </thead>
+          <tbody id="deliveryHistoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="delivery-detail.js"></script>
+</body>
+</html>

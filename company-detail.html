@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company 360 Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="theme-init.js?v=20260217-theme-library-v1"></script>
+  <style>
+    :root {
+      --bg: #0a0d0b;
+      --panel: #111814;
+      --panel-border: #1f2d25;
+      --text: #e8f3eb;
+      --text-muted: #8ca697;
+      --accent: #ffbd59;
+      --accent-soft: rgba(255, 189, 89, 0.14);
+      --danger: #ff7272;
+      --success: #4dd38f;
+    }
+
+    * {
+      box-sizing: border-box;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    *::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: "Space Grotesk", "Trebuchet MS", "Tahoma", sans-serif;
+      background:
+        radial-gradient(65rem 35rem at 120% -10%, rgba(255, 189, 89, 0.14), transparent 42%),
+        radial-gradient(45rem 25rem at -20% 120%, rgba(64, 150, 255, 0.08), transparent 42%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: none;
+      margin: 0;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      height: 100vh;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--panel-border);
+      padding: 1.25rem 1rem;
+      height: 100vh;
+      overflow-y: auto;
+      background: linear-gradient(180deg, rgba(20, 32, 25, 0.9), rgba(11, 16, 13, 0.95));
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .menu-item {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.93rem;
+      padding: 0.62rem 0.72rem;
+      border-radius: 0.6rem;
+      border: 1px solid transparent;
+      transition: 140ms ease;
+    }
+
+    .menu-item:hover {
+      color: var(--text);
+      border-color: #4d3b1e;
+      background: rgba(62, 48, 28, 0.48);
+    }
+
+    .menu-item.active {
+      color: var(--text);
+      background: var(--accent-soft);
+      border-color: rgba(255, 189, 89, 0.35);
+    }
+
+    .menu-item-disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.8rem;
+      padding: 0.85rem;
+      background: rgba(16, 23, 18, 0.7);
+    }
+
+    .sidebar-footer p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .sidebar-footer strong {
+      display: block;
+      margin-top: 0.35rem;
+      font-size: 0.9rem;
+    }
+
+    .content {
+      padding: 1.35rem;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    body.company-ai-agent-active .content {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: 0;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .back-link {
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid rgba(255, 189, 89, 0.35);
+      border-radius: 0.6rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+      background: rgba(255, 189, 89, 0.08);
+      white-space: nowrap;
+    }
+
+    .title-wrap p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .title-wrap h1 {
+      margin: 0.35rem 0 0;
+      font-size: clamp(1.25rem, 2.2vw, 2rem);
+      line-height: 1.25;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.7rem;
+    }
+
+    .chip {
+      border: 1px solid #304138;
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      background: #17231d;
+    }
+
+    .chip.universe {
+      border-color: rgba(77, 211, 143, 0.36);
+      color: #9ce8c2;
+      background: rgba(77, 211, 143, 0.11);
+    }
+
+    .chip.status-green {
+      border-color: rgba(77, 211, 143, 0.45);
+      color: #9ce8c2;
+      background: rgba(77, 211, 143, 0.14);
+    }
+
+    .chip.status-yellow {
+      border-color: rgba(255, 189, 89, 0.45);
+      color: #ffd89e;
+      background: rgba(255, 189, 89, 0.15);
+    }
+
+    .error {
+      border: 1px solid rgba(255, 114, 114, 0.35);
+      background: rgba(255, 114, 114, 0.12);
+      color: #ffb9b9;
+      border-radius: 0.7rem;
+      padding: 0.75rem 0.9rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .metric-card {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.85rem;
+      background: var(--panel);
+      padding: 0.72rem 0.8rem;
+      min-height: 68px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.22rem;
+    }
+
+    .metric-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      line-height: 1.25;
+    }
+
+    .metric-card strong {
+      display: block;
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-content {
+      min-width: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body.company-ai-agent-active .container,
+    body.company-ai-agent-active .tab-content {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.9rem;
+      background: var(--panel);
+      overflow: hidden;
+      margin-bottom: 0.9rem;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.82rem 1rem;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 0.92rem;
+    }
+
+    .panel-head p {
+      margin: 0.18rem 0 0;
+      color: var(--text-muted);
+      font-size: 0.74rem;
+    }
+
+    .panel-note {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .panel-body {
+      padding: 0.92rem 1rem;
+      line-height: 1.5;
+    }
+
+    .product-text {
+      margin: 0;
+      white-space: pre-wrap;
+      color: #d9e8df;
+    }
+
+    .product-text.clamped {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      line-clamp: 3;
+    }
+
+    .text-toggle {
+      margin-top: 0.65rem;
+      border: 1px solid #304138;
+      background: #17231d;
+      color: var(--text-muted);
+      border-radius: 0.55rem;
+      padding: 0.3rem 0.55rem;
+      font: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .text-toggle:hover {
+      color: var(--text);
+      border-color: #47614f;
+    }
+
+    .text-toggle.hidden {
+      display: none;
+    }
+
+    .kv-table,
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .kv-table th,
+    .kv-table td,
+    .data-table th,
+    .data-table td {
+      border-bottom: 1px solid #1f2c25;
+      padding: 0.63rem 0.72rem;
+      font-size: 0.82rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .kv-table th {
+      width: 240px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .data-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      white-space: nowrap;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.72rem 1rem 0.9rem;
+      border-top: 1px solid var(--panel-border);
+    }
+
+    .pagination p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    .pagination-actions {
+      display: inline-flex;
+      gap: 0.45rem;
+    }
+
+    .page-btn {
+      border: 1px solid #4d3b1e;
+      color: var(--text);
+      background: #251c11;
+      padding: 0.4rem 0.68rem;
+      border-radius: 0.6rem;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.78rem;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .chart-block {
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.55rem;
+    }
+
+    .chart-head h4 {
+      margin: 0;
+      font-size: 0.88rem;
+      color: #c2d7ca;
+    }
+
+    .chart-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .chart-range {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--text-muted);
+      font-size: 0.74rem;
+    }
+
+    .chart-range select {
+      border: 1px solid #4d3b1e;
+      background: #17120d;
+      color: var(--text);
+      border-radius: 0.55rem;
+      padding: 0.32rem 0.48rem;
+      font: inherit;
+      font-size: 0.76rem;
+    }
+
+    .sub-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .sub-card {
+      border: 1px solid #23322b;
+      background: #101913;
+      border-radius: 0.75rem;
+      padding: 0.7rem 0.78rem;
+    }
+
+    .sub-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.74rem;
+    }
+
+    .sub-card strong {
+      display: block;
+      margin-top: 0.28rem;
+      font-size: 0.96rem;
+    }
+
+    .chart-wrap {
+      position: relative;
+      min-height: 260px;
+    }
+
+    .chart-wrap canvas {
+      width: 100% !important;
+      height: 260px !important;
+    }
+
+    .chart-wrap.diagram {
+      min-height: 420px;
+    }
+
+    .chart-wrap.diagram canvas {
+      height: 420px !important;
+    }
+
+    .ai-chat-layout {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 270px minmax(0, 1fr);
+      gap: 0.8rem;
+    }
+
+    .ai-chat-layout-single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ai-chat-shell {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.85rem;
+      background: rgba(11, 17, 14, 0.72);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .ai-chat-body {
+      min-height: 360px;
+      max-height: 58vh;
+      overflow: auto;
+      padding: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.72rem;
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .ai-chat-body::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    .ai-msg {
+      display: flex;
+      flex-direction: column;
+      gap: 0.24rem;
+      max-width: min(92%, 820px);
+    }
+
+    .ai-msg-user {
+      align-self: flex-end;
+    }
+
+    .ai-msg-assistant {
+      align-self: flex-start;
+    }
+
+    .ai-msg-role {
+      margin: 0;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    .ai-msg-bubble {
+      border: 1px solid var(--panel-border);
+      border-radius: 0.78rem;
+      padding: 0.62rem 0.72rem;
+      font-size: 0.83rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .ai-msg-user .ai-msg-bubble {
+      background: rgba(255, 189, 89, 0.14);
+      border-color: rgba(255, 189, 89, 0.35);
+    }
+
+    .ai-msg-assistant .ai-msg-bubble {
+      background: rgba(23, 34, 28, 0.92);
+    }
+
+    .ai-msg-pending .ai-msg-bubble {
+      opacity: 0.76;
+      font-style: italic;
+    }
+
+    .ai-msg-meta {
+      margin: 0;
+      color: #8fa69a;
+      font-size: 0.68rem;
+    }
+
+    .ai-chat-composer {
+      border-top: 1px solid var(--panel-border);
+      padding: 0.75rem;
+      background: rgba(9, 14, 11, 0.9);
+    }
+
+    .ai-chat-composer textarea {
+      width: 100%;
+      resize: none;
+      min-height: 60px;
+      border: 1px solid #2b3e34;
+      border-radius: 0.68rem;
+      background: #101713;
+      color: var(--text);
+      font: inherit;
+      line-height: 1.42;
+      padding: 0.62rem 0.7rem;
+      overflow: hidden;
+    }
+
+    .ai-chat-actions {
+      margin-top: 0.65rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.55rem;
+    }
+
+    .ai-empty-state {
+      display: none;
+      font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+      font-weight: 500;
+      line-height: 1.2;
+      text-align: center;
+      color: #dcebe2;
+      letter-spacing: -0.01em;
+      font-family: "Space Grotesk", "Trebuchet MS", "Tahoma", sans-serif;
+    }
+
+    #tab-ai-agent .panel {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      margin-bottom: 0;
+      --ai-chat-frame-width: min(760px, calc(100% - 0.5rem));
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #tab-ai-agent .panel-head {
+      display: none;
+    }
+
+    #tab-ai-agent .panel-body {
+      padding: 0;
+      height: auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+
+    #tab-ai-agent .ai-chat-layout {
+      margin: 0;
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+
+    #tab-ai-agent .ai-chat-shell {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      height: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    #tab-ai-agent .ai-chat-body {
+      padding: 0 0 20px;
+      max-height: none;
+      width: var(--ai-chat-frame-width);
+      margin: 0 auto;
+      scroll-padding-bottom: 5.4rem;
+    }
+
+    #tab-ai-agent .ai-msg-role,
+    #tab-ai-agent .ai-msg-meta {
+      display: none;
+    }
+
+    #tab-ai-agent .ai-msg {
+      max-width: 100%;
+    }
+
+    #tab-ai-agent .ai-msg-bubble {
+      font-size: 0.95rem;
+      line-height: 1.58;
+    }
+
+    #tab-ai-agent .ai-msg-assistant .ai-msg-bubble {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    #tab-ai-agent .ai-chat-composer {
+      border-top: none;
+      background: transparent;
+      margin: auto auto 0;
+      width: var(--ai-chat-frame-width);
+      padding: 0 0 1.25rem;
+    }
+
+    #tab-ai-agent .ai-chat-composer textarea {
+      min-height: 52px;
+      height: 52px;
+      border-radius: 1rem;
+      font-size: 0.98rem;
+      line-height: 52px;
+      padding: 0 1rem;
+    }
+
+    #tab-ai-agent .ai-chat-composer textarea.ai-input-multiline {
+      line-height: 1.35;
+      padding: 0.62rem 1rem;
+    }
+
+    #tab-ai-agent .ai-chat-composer textarea::placeholder {
+      color: #a8bbb0;
+      font-size: 0.98rem;
+    }
+
+    #tab-ai-agent.ai-initial .ai-chat-shell {
+      justify-content: center;
+      align-items: center;
+    }
+
+    #tab-ai-agent.ai-initial .ai-empty-state {
+      display: block;
+      margin: 0 0 1rem;
+      width: 100%;
+    }
+
+    #tab-ai-agent.ai-initial .ai-chat-body {
+      display: none;
+    }
+
+    #tab-ai-agent.ai-initial .ai-chat-composer {
+      margin: 0 auto;
+      width: min(560px, calc(100% - 1rem));
+    }
+
+    #tab-ai-agent.ai-initial .ai-chat-composer textarea {
+      min-height: 52px;
+      height: 52px;
+      line-height: 52px;
+      padding: 0 1rem;
+    }
+
+    #tab-ai-agent.tab-panel.active {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .quality-score {
+      font-size: 1.45rem;
+      color: #ffd89e;
+      font-weight: 700;
+      margin-right: 0.45rem;
+    }
+
+    .quality-summary {
+      margin: 0;
+      color: #d9e8df;
+      font-size: 0.84rem;
+    }
+
+    .missing-list {
+      margin: 0;
+      padding-left: 1.1rem;
+      color: #d9e8df;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .empty-cell {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    @media (max-width: 1120px) {
+      .metric-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 980px) {
+      body {
+        height: auto;
+        overflow: auto;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+      }
+
+      .sidebar {
+        height: auto;
+        overflow: visible;
+        border-right: none;
+        border-bottom: 1px solid var(--panel-border);
+      }
+
+      .menu {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .content {
+        height: auto;
+        overflow: visible;
+        padding: 1rem;
+      }
+
+      .sub-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .menu {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .kv-table th,
+      .kv-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .kv-table th {
+        border-bottom: none;
+        padding-bottom: 0.15rem;
+      }
+
+      .kv-table td {
+        padding-top: 0;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="themes/theme-legacy.css?v=20260217-theme-library-v1">
+  <link rel="stylesheet" href="themes/theme-mono.css?v=20260217-theme-library-v1">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <nav class="menu" aria-label="Company detail sections">
+        <a class="menu-item active" href="#" data-tab-target="overview">Profile</a>
+        <a class="menu-item" href="#" data-tab-target="contacts">Contacts</a>
+        <a class="menu-item" href="#" data-tab-target="trade">Trade &amp; Supply</a>
+        <a class="menu-item" href="#" data-tab-target="ai-agent">AI Agent</a>
+      </nav>
+      <div class="sidebar-footer">
+        <p>Company 360</p>
+        <strong id="sidebarCompanyLabel">Loading...</strong>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="container">
+        <div class="topbar">
+          <div class="title-wrap">
+            <p>Market / Company 360</p>
+            <h1 id="companyName">Loading...</h1>
+          </div>
+          <a class="back-link" href="index.html?view=market-map">Back to Market</a>
+        </div>
+
+        <div id="errorBox" class="error" role="alert"></div>
+
+        <div class="tab-content">
+        <section id="tab-overview" class="tab-panel active" data-tab-panel="overview">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Product Description</h2>
+                <p>From `companies.product_description`</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <p id="productDescriptionValue" class="product-text clamped">-</p>
+              <button id="toggleProductBtn" class="text-toggle hidden" type="button">Read more</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Company Overview</h2>
+                <p>Market intelligence summary</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <table class="kv-table">
+                <tbody id="overviewTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Organization Profile</h2>
+                <p>From `company_info`</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <table class="kv-table">
+                <tbody id="organizationTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-contacts" class="tab-panel" data-tab-panel="contacts">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Contact Directory</h2>
+                <p>From `company_contract`</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Position</th>
+                      <th>Department</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>Region</th>
+                    </tr>
+                  </thead>
+                  <tbody id="contactTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Known Emails</h2>
+                <p>From `company_email`</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Importance</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody id="emailTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-trade" class="tab-panel" data-tab-panel="trade">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Trade &amp; Supply Diagram</h2>
+                <p>Supplier-to-company flow by USD</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chart-wrap diagram">
+                <canvas id="supplySankeyChart" aria-label="Supply flow sankey chart"></canvas>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Trade History</h2>
+                <p>From `company_history` (latest first)</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Product</th>
+                      <th>Quantity</th>
+                      <th>Total Price USD</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="pagination">
+              <p id="historyPaginationInfo">Showing 0-0 of 0</p>
+              <div class="pagination-actions">
+                <button id="historyPrevBtn" class="page-btn" type="button">Prev</button>
+                <button id="historyNextBtn" class="page-btn" type="button">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Trade History Trend</h2>
+                <p>Monthly performance from `company_history`</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chart-block">
+                <div class="chart-head">
+                  <h4>Monthly Trade History (Vertical Bar)</h4>
+                  <div class="chart-actions">
+                    <label class="chart-range">
+                      <span>Metric</span>
+                      <select id="historyTrendMetric" aria-label="Trade history chart metric">
+                        <option value="usd" selected>USD</option>
+                        <option value="quantity">Quantity (TON)</option>
+                        <option value="trades">Trades</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div class="chart-wrap">
+                  <canvas id="historyTrendChart" aria-label="Trade history monthly trend chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Supply Chain Counterparties</h2>
+                <p>From `company_supplychain`</p>
+              </div>
+            </div>
+            <div class="panel-body" style="padding:0;">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Exporter</th>
+                      <th>Trades</th>
+                      <th>Quantity</th>
+                      <th>Weight (kg)</th>
+                      <th>Total Price USD</th>
+                      <th>Price Share</th>
+                    </tr>
+                  </thead>
+                  <tbody id="supplyTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="pagination">
+              <p id="supplyPaginationInfo">Showing 0-0 of 0</p>
+              <div class="pagination-actions">
+                <button id="supplyPrevBtn" class="page-btn" type="button">Prev</button>
+                <button id="supplyNextBtn" class="page-btn" type="button">Next</button>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-ai-agent" class="tab-panel" data-tab-panel="ai-agent">
+          <section class="panel">
+            <div id="companyAiErrorBanner" class="error" role="alert" style="display:none; margin:0.9rem 1rem 0;"></div>
+            <div class="panel-body">
+              <div class="ai-chat-layout ai-chat-layout-single">
+                <div class="ai-chat-shell">
+                  <div id="companyAiEmptyState" class="ai-empty-state">What can I help with?</div>
+                  <div id="companyAiChatBody" class="ai-chat-body" aria-live="polite"></div>
+                  <div class="ai-chat-composer">
+                    <textarea
+                      id="companyAiChatInput"
+                      rows="1"
+                      placeholder="Message AI Agent"
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.14.0/dist/chartjs-chart-sankey.min.js"></script>
+  <script src="company-detail.js?v=20260219-company-detail-layout-v29"></script>
+</body>
+</html>
