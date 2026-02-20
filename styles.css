@@ -1638,6 +1638,7 @@ body.ai-topbar-fixed #aiAgentPanel {
   min-width: 0;
   padding-top: 0.35rem;
   padding-bottom: 0.35rem;
+  white-space: nowrap;
 }
 
 body.product-detail-open {
