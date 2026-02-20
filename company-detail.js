@@ -538,14 +538,13 @@ function renderContactsTable(rows) {
 
 function renderEmailsTable(rows) {
   if (!rows.length) {
-    renderEmptyRow(elements.emailTableBody, 4, "No email rows found.");
+    renderEmptyRow(elements.emailTableBody, 3, "No email rows found.");
     return;
   }
 
   elements.emailTableBody.innerHTML = rows
     .map((row) => `
       <tr>
-        <td>${escapeHtml(String(row.contact_name || "").trim() || "No name")}</td>
         <td>${escapeHtml(toSafeText(row.email))}</td>
         <td>${escapeHtml(toSafeText(row.importance))}</td>
         <td>${escapeHtml(toSafeText(row.source))}</td>
