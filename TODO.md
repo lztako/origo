@@ -26,3 +26,4 @@
 - [x] Access UAT ฝั่ง SQL/RLS + report (`UAT_ACCESS_REPORT_2026-02-21.md`)
 - [x] บังคับ `1 user = 1 company` + auto-mapping trigger
 - [x] เพิ่ม data-quality guard script กันข้อมูลเทสค้าง (`supabase/sql/data_quality_guard.sql`)
+- [x] เพิ่มชุดทดสอบความแม่นยำ AI แบบ live (`qa/ai_accuracy/run-ai-eval.mjs`) + เอกสารวิธีรัน

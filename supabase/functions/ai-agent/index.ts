@@ -249,12 +249,45 @@ function formatNumberTokenWithCommas(token: string): string {
   });
 }
 
-function enforceMinimalAnswerStyle(answer: string): string {
+function stripJsonCodeFence(text: string): string {
+  const fenced = String(text || "").trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (!fenced) return String(text || "").trim();
+  return String(fenced[1] || "").trim();
+}
+
+function normalizeJsonNumberSeparators(text: string): string {
+  return String(text || "").replace(
+    /([:\[,]\s*-?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(\s*[,}\]])/g,
+    (_match, prefix, numeric, suffix) => `${prefix}${String(numeric).replace(/,/g, "")}${suffix}`
+  );
+}
+
+function toNormalizedJsonText(text: string): string | null {
+  const cleaned = stripJsonCodeFence(text);
+  try {
+    return JSON.stringify(JSON.parse(cleaned), null, 2);
+  } catch {
+    const normalized = normalizeJsonNumberSeparators(cleaned);
+    try {
+      return JSON.stringify(JSON.parse(normalized), null, 2);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function enforceMinimalAnswerStyle(answer: string, options?: { jsonMode?: boolean }): string {
   let text = String(answer || "");
 
   // Remove verbose source tags from the response body.
   text = text.replace(/\s*\[source:\s*[^\]]+\]/gi, "");
   text = text.replace(/^\s*sources?\s*:\s*.*$/gim, "");
+
+  if (options?.jsonMode) {
+    const normalizedJson = toNormalizedJsonText(text);
+    if (normalizedJson) return normalizedJson;
+    return stripJsonCodeFence(text).replace(/\n{3,}/g, "\n\n").trim();
+  }
 
   // Add thousand separators to numeric tokens when applicable.
   text = text.replace(/(?<![\w\-,])\d+(?:\.\d+)?(?![\w\-,])/g, (token) => formatNumberTokenWithCommas(token));
@@ -276,6 +309,12 @@ function normalizeMessages(messages: any[]): NormalizedMessage[] {
 function getLatestUserQuestion(prompt: string, messages: NormalizedMessage[]): string {
   const latestUser = [...messages].reverse().find((message) => message.role === "user");
   return String(latestUser?.content || prompt || "").trim();
+}
+
+function isJsonRequested(question: string): boolean {
+  const normalized = String(question || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return /(^|\s)json(\s|$)|ตอบเป็น\s*json|return\s+json|valid\s+json/.test(normalized);
 }
 
 function detectRequestedDomains(question: string): DomainSelection {
@@ -1791,6 +1830,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const question = getLatestUserQuestion(prompt, messages);
+    const expectsJson = isJsonRequested(question);
     const readOnlyServerContext = isCompanyDetailMode
       ? await buildCompanyDetailServerContext(authState.client, question, clientContext)
       : await buildReadOnlyServerContext(authState.client, question, clientContext, strictServerOnly);
@@ -1805,6 +1845,12 @@ Deno.serve(async (req: Request) => {
     const productScopeRule = strictServerOnly
       ? "Use product rows exactly as provided in server_context."
       : "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope.";
+    const jsonOutputRule = expectsJson
+      ? "Return only valid JSON. Do not include prose, markdown, code fences, or trailing commentary. Use plain numeric values without thousands separators."
+      : "Output plain text only. Do not use markdown syntax such as **, __, #, or ``` blocks.";
+    const defaultNumericRule = expectsJson
+      ? "If numbers appear in JSON, keep them as plain numeric values without commas."
+      : "Format all numeric values with thousands separators (e.g., 143,149.65).";
 
     const systemInstruction = isCompanyDetailMode
       ? "You are an analyst for a single company detail page. " +
@@ -1818,14 +1864,14 @@ Deno.serve(async (req: Request) => {
         "Keep answers concise, practical, and numeric when possible. " +
         "Always include explicit period labels when discussing trends. " +
         "Do not include source tags/citation blocks unless explicitly requested by user. " +
-        "Output plain text only. Do not use markdown syntax such as **, __, #, or ``` blocks. " +
+        jsonOutputRule + " " +
         "If data is insufficient, state exactly which section in server_context.analytics.company_detail is missing."
       : "You are a business analyst for a dashboard with four domains: market (external), operation (internal), finance (internal), and product (internal). " +
         defaultSourceRule + " " +
         "Prioritize server_context.focused_views according to server_context.intents_requested for this question. " +
         "Use only views relevant to the detected intent unless user explicitly asks cross-intent comparison. " +
         "Keep answers minimalist and concise, focusing only on the requested output. " +
-        "Format all numeric values with thousands separators (e.g., 143,149.65). " +
+        defaultNumericRule + " " +
         "For monthly performance, prioritize finance.monthly_performance and operation.monthly_delivery_performance. " +
         "For top customers, prioritize finance.top_customers_by_usd, finance.top_customers_by_tons, and operation.top_customers_by_contract_tons. " +
         "For risk questions, prioritize operation.overdue_by_customer and operation.summary. " +
@@ -1841,7 +1887,7 @@ Deno.serve(async (req: Request) => {
         "Always include numeric values and explicit month/period labels when available. " +
         "Do not include source tags or citation blocks unless the user explicitly asks for sources. " +
         "Respect cross-universe boundary: do not merge external market entities with internal operation/finance/product entities unless explicit mapping exists in context. " +
-        "Output plain text only. Do not use markdown syntax such as **, __, #, or ``` blocks. " +
+        jsonOutputRule + " " +
         "If data is insufficient, state exactly which table/domain is missing.";
 
     const baseMessages = buildBaseMessages(mergedContext, messages, prompt);
@@ -1884,7 +1930,7 @@ Deno.serve(async (req: Request) => {
         : buildFallbackAnswer(question, readOnlyServerContext, providerError);
     }
 
-    answer = enforceMinimalAnswerStyle(answer || "");
+    answer = enforceMinimalAnswerStyle(answer || "", { jsonMode: expectsJson });
 
     return toJson({
       answer,
