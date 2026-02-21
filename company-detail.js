@@ -1124,7 +1124,20 @@ function buildCompanyAiContext() {
     },
     rules: {
       analysis_scope: "Use only this company context. Do not generalize to other companies unless explicitly stated as unknown.",
-      data_policy: "No cross-company joins. No cross-universe inference."
+      data_policy: "No cross-company joins. No cross-universe inference.",
+      market_status_policy: {
+        green: {
+          is_customer: true,
+          label_th: "เป็นลูกค้า",
+          label_en: "Customer"
+        },
+        yellow: {
+          is_customer: false,
+          label_th: "ยังไม่เป็นลูกค้า",
+          label_en: "Prospect"
+        },
+        strict_rule: "green means already our customer; yellow means not yet our customer."
+      }
     },
     company: {
       company_id: String(company.company_id || ""),

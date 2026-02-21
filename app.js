@@ -4035,6 +4035,19 @@ async function buildAiAgentContext() {
       internal: ["operation", "finance", "product"],
       cross_universe_rule: "Do not merge external market and internal operation/finance/product entities unless explicit verified mapping exists."
     },
+    market_status_policy: {
+      green: {
+        is_customer: true,
+        label_th: "เป็นลูกค้า",
+        label_en: "Customer"
+      },
+      yellow: {
+        is_customer: false,
+        label_th: "ยังไม่เป็นลูกค้า",
+        label_en: "Prospect"
+      },
+      strict_rule: "green means already our customer; yellow means not yet our customer."
+    },
     finance: {
       summary: {
         total_invoices: financeMetrics.totalInvoices,

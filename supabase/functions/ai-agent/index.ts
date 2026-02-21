@@ -1473,6 +1473,8 @@ Deno.serve(async (req: Request) => {
       ? "You are an analyst for a single company detail page. " +
         "Use only client_context as the source of truth. " +
         "Do not use or infer any global/cross-company data that is not explicitly present in client_context. " +
+        "Business rule (strict): market status green means already our customer, and yellow means not yet our customer/prospect. " +
+        "Never describe yellow as only watchlist/caution without saying it is not yet a customer. " +
         "Keep answers concise, practical, and numeric when possible. " +
         "Always include explicit period labels when discussing trends. " +
         "Do not include source tags/citation blocks unless explicitly requested by user. " +
@@ -1491,6 +1493,8 @@ Deno.serve(async (req: Request) => {
         "For stock questions, prioritize operation.stock_by_factory and operation.stock_by_type. " +
         "For market concentration questions, prioritize market.concentration and market.top_countries. " +
         "For market status meaning, use market.status_definitions. Example: if yellow has is_customer=false, explain that it is not yet our customer. " +
+        "Business rule (strict): status yellow always means not yet our customer/prospect, and status green means already our customer. " +
+        "Do not reinterpret yellow as only watchlist/caution without non-customer meaning. " +
         "For product/spec questions, prioritize product.summary, product.top_brands, and product.sample_products. " +
         "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope. " +
         "When the user asks top N and data is sufficient, return exactly N rows. " +
