@@ -3,6 +3,34 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+function buildLoginUrlWithNext() {
+  const pathName = String(window.location.pathname || "");
+  const fileName = pathName.endsWith("/")
+    ? "index.html"
+    : (pathName.split("/").pop() || "index.html");
+  const nextPath = `${fileName}${window.location.search || ""}`;
+  return `login.html?next=${encodeURIComponent(nextPath)}`;
+}
+
+function redirectToLoginPage() {
+  window.location.replace(buildLoginUrlWithNext());
+}
+
+async function requireAuthenticatedSession() {
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (!data?.session) {
+      redirectToLoginPage();
+      return null;
+    }
+    return data.session;
+  } catch (_error) {
+    redirectToLoginPage();
+    return null;
+  }
+}
+
 const elements = {
   pageTitle: document.getElementById("pageTitle"),
   contractIdValue: document.getElementById("contractIdValue"),
@@ -158,8 +186,15 @@ async function loadDeliveryDetail() {
   renderDeliveryHistoryTable(deliveries);
 }
 
-loadDeliveryDetail().catch((error) => {
-  elements.pageTitle.textContent = "Delivery Detail Error";
-  setError(error?.message || "Unable to load delivery detail.");
-  renderInfoRow("Failed to load delivery history.");
-});
+async function bootstrapDeliveryDetail() {
+  const session = await requireAuthenticatedSession();
+  if (!session) return;
+
+  loadDeliveryDetail().catch((error) => {
+    elements.pageTitle.textContent = "Delivery Detail Error";
+    setError(error?.message || "Unable to load delivery detail.");
+    renderInfoRow("Failed to load delivery history.");
+  });
+}
+
+bootstrapDeliveryDetail();

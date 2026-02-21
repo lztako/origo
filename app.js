@@ -9,6 +9,7 @@ if (window.Chart && window.ChartDataLabels) {
 const elements = {
   refreshButton: document.getElementById("refreshBtn"),
   lastSyncLabel: document.getElementById("lastSyncLabel"),
+  logoutBtn: document.getElementById("logoutBtn"),
   pageEyebrow: document.getElementById("pageEyebrow"),
   pageTitle: document.getElementById("pageTitle"),
   menuItems: document.querySelectorAll("[data-view-target]"),
@@ -305,6 +306,42 @@ const PRODUCT_CATALOG_LOCAL_DRAFT_ROWS = Object.freeze([
     updated_at: "2026-02-20T00:00:00Z"
   }
 ]);
+
+function buildLoginUrlWithNext() {
+  const pathName = String(window.location.pathname || "");
+  const fileName = pathName.endsWith("/")
+    ? "index.html"
+    : (pathName.split("/").pop() || "index.html");
+  const nextPath = `${fileName}${window.location.search || ""}`;
+  return `login.html?next=${encodeURIComponent(nextPath)}`;
+}
+
+function redirectToLoginPage() {
+  window.location.replace(buildLoginUrlWithNext());
+}
+
+async function requireAuthenticatedSession() {
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (!data?.session) {
+      redirectToLoginPage();
+      return null;
+    }
+    return data.session;
+  } catch (_error) {
+    redirectToLoginPage();
+    return null;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await supabaseClient.auth.signOut();
+  } finally {
+    window.location.replace("login.html");
+  }
+}
 const MARKET_MAP_COLOR_GREEN = "rgba(34, 197, 94, 0.78)";
 const MARKET_MAP_COLOR_YELLOW = "rgba(251, 191, 36, 0.78)";
 const MARKET_MAP_COLOR_ORANGE = "rgba(249, 115, 22, 0.82)";
@@ -4772,11 +4809,27 @@ if (elements.refreshButton) {
   });
 }
 
-applyUrlStateFromQuery();
-syncChartFilterButtons();
-renderAiModelPill();
-renderAiMessages();
-syncAiInitialState();
+if (elements.logoutBtn) {
+  elements.logoutBtn.addEventListener("click", async () => {
+    if (elements.logoutBtn.disabled) return;
+    elements.logoutBtn.disabled = true;
+    elements.logoutBtn.textContent = "Logging out...";
+    await handleLogout();
+  });
+}
 
-setActiveView(state.view);
-refreshAll();
+async function bootstrapDashboard() {
+  const session = await requireAuthenticatedSession();
+  if (!session) return;
+
+  applyUrlStateFromQuery();
+  syncChartFilterButtons();
+  renderAiModelPill();
+  renderAiMessages();
+  syncAiInitialState();
+
+  setActiveView(state.view);
+  refreshAll();
+}
+
+bootstrapDashboard();

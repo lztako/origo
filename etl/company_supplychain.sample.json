@@ -1,0 +1,28 @@
+[
+  {
+    "company_id": "3e981037-7fad-4241-86d6-2fe0b08f7d84",
+    "exporter": "GLOBAL MIND AGRICULTURE PTE LTD",
+    "trades_sum": 5,
+    "trade_frequency_ratio": 55.56,
+    "quantity": 22000,
+    "quantity_ratio": 6.36,
+    "kg_weight": 22000000,
+    "weight_ratio": 6.11,
+    "total_price_usd": 9453535,
+    "total_price_ratio": 49.72,
+    "created_at": "2026-02-12T07:34:27Z"
+  },
+  {
+    "company_id": "3e981037-7fad-4241-86d6-2fe0b08f7d84",
+    "exporter": "PACIFIC SUGAR CORPORATION LIMITED",
+    "trades_sum": 3,
+    "trade_frequency_ratio": 33.33,
+    "quantity": 20000,
+    "quantity_ratio": 5.78,
+    "kg_weight": 20000000,
+    "weight_ratio": 5.55,
+    "total_price_usd": 7518327.25,
+    "total_price_ratio": 39.55,
+    "created_at": "2026-02-12T07:34:27Z"
+  }
+]

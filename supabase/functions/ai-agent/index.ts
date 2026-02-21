@@ -330,17 +330,65 @@ function detectRequestedIntents(question: string): IntentSelection {
   };
 }
 
-function getSupabaseAdminClient() {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return null;
+function getBearerToken(req: Request): string | null {
+  const headerValue = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (!headerValue) return null;
 
-  return createClient(supabaseUrl, serviceRoleKey, {
+  const matched = headerValue.match(/^Bearer\s+(.+)$/i);
+  return matched?.[1]?.trim() || null;
+}
+
+function getSupabaseUserClient(accessToken: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !anonKey || !accessToken) return null;
+
+  return createClient(supabaseUrl, anonKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
     }
   });
+}
+
+async function authenticateRequest(req: Request) {
+  const accessToken = getBearerToken(req);
+  if (!accessToken) {
+    return {
+      client: null,
+      user: null,
+      error: "Missing Bearer token"
+    };
+  }
+
+  const client = getSupabaseUserClient(accessToken);
+  if (!client) {
+    return {
+      client: null,
+      user: null,
+      error: "SUPABASE_URL or SUPABASE_ANON_KEY is not configured"
+    };
+  }
+
+  const { data, error } = await client.auth.getUser();
+  if (error || !data?.user) {
+    return {
+      client: null,
+      user: null,
+      error: "Invalid or expired token"
+    };
+  }
+
+  return {
+    client,
+    user: data.user,
+    error: null
+  };
 }
 
 async function loadAllowlistedTable(client: any, spec: AllowlistTableSpec) {
@@ -1048,7 +1096,7 @@ async function buildReadOnlyServerContext(client: any, question: string, clientC
       tool_layer: {
         enabled: false,
         mode: "allowlist-readonly-v1",
-        reason: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured",
+        reason: "SUPABASE_URL or SUPABASE_ANON_KEY is not configured",
         domains_requested: domains,
         intents_requested: intents
       },
@@ -1393,8 +1441,13 @@ Deno.serve(async (req: Request) => {
       return toJson({ error: "prompt or messages is required" }, 400);
     }
 
+    const authState = await authenticateRequest(req);
+    if (authState.error || !authState.client || !authState.user) {
+      const status = authState.error === "SUPABASE_URL or SUPABASE_ANON_KEY is not configured" ? 500 : 401;
+      return toJson({ error: authState.error || "Unauthorized" }, status);
+    }
+
     const question = getLatestUserQuestion(prompt, messages);
-    const adminClient = getSupabaseAdminClient();
     const readOnlyServerContext = isCompanyDetailMode
       ? {
           tool_layer: {
@@ -1413,7 +1466,7 @@ Deno.serve(async (req: Request) => {
           },
           analytics: null
         }
-      : await buildReadOnlyServerContext(adminClient, question, clientContext);
+      : await buildReadOnlyServerContext(authState.client, question, clientContext);
     const mergedContext = mergeContext(clientContext, readOnlyServerContext);
 
     const systemInstruction = isCompanyDetailMode

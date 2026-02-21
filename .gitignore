@@ -1,2 +1,10 @@
 # Supabase CLI local temp/cache files
 supabase/.temp/
+
+# Local ETL payloads/reports/secrets
+etl/input/*.json
+etl/input/*.jsonl
+etl/input/*.ndjson
+etl/input/*.csv
+etl/logs/
+etl/.env

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="theme-init.js?v=20260217-theme-library-v1"></script>
+  <link rel="stylesheet" href="styles.css?v=20260221-login-v1">
+  <link rel="stylesheet" href="themes/theme-legacy.css?v=20260217-theme-library-v1">
+  <link rel="stylesheet" href="themes/theme-mono.css?v=20260217-theme-library-v1">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-panel login-panel-single" aria-label="Sign in form">
+      <h2>Sign in</h2>
+      <p>Use your account credentials to continue.</p>
+      <form id="loginForm" class="login-form">
+        <label class="login-field">
+          <span>Email</span>
+          <input id="loginEmail" type="email" autocomplete="email" required>
+        </label>
+        <label class="login-field">
+          <span>Password</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <div class="login-actions">
+          <button id="loginSubmitBtn" class="refresh-btn login-submit-btn" type="submit">Sign in</button>
+        </div>
+        <div id="loginStatus" class="login-status" role="status" aria-live="polite"></div>
+      </form>
+      <p class="login-help">Need an account? Contact your administrator.</p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="login.js?v=20260221-login-v1"></script>
+</body>
+</html>

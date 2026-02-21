@@ -6,9 +6,38 @@ if (window.Chart && window.ChartDataLabels) {
   window.Chart.register(window.ChartDataLabels);
 }
 
+function buildLoginUrlWithNext() {
+  const pathName = String(window.location.pathname || "");
+  const fileName = pathName.endsWith("/")
+    ? "index.html"
+    : (pathName.split("/").pop() || "index.html");
+  const nextPath = `${fileName}${window.location.search || ""}`;
+  return `login.html?next=${encodeURIComponent(nextPath)}`;
+}
+
+function redirectToLoginPage() {
+  window.location.replace(buildLoginUrlWithNext());
+}
+
+async function requireAuthenticatedSession() {
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (!data?.session) {
+      redirectToLoginPage();
+      return null;
+    }
+    return data.session;
+  } catch (_error) {
+    redirectToLoginPage();
+    return null;
+  }
+}
+
 const TRADE_TABLE_PAGE_SIZE = 10;
 const HISTORY_TREND_MONTHS = 18;
 const COMPANY_AI_MODEL = "claude-sonnet-4-20250514";
+const SUPPLY_SNAPSHOT_CLUSTER_GAP_MS = 2 * 60 * 1000;
 const SUPPLY_SANKEY_NODE_PADDING = 22;
 const SUPPLY_SANKEY_MIN_LINK_THICKNESS_PX = 6;
 const SUPPLY_SANKEY_INLINE_LABEL_MIN_THICKNESS_PX = 12;
@@ -152,27 +181,90 @@ function toMassTons(quantityValue, unitValue) {
   return null;
 }
 
-function normalizePercentInput(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  // Some datasets store ratio as 0-1, others already as percent.
-  if (Math.abs(numeric) <= 1) return numeric * 100;
-  return numeric;
-}
-
 function computeSupplyPriceSharePercent(row, totalUsd) {
-  const ratio = normalizePercentInput(row?.total_price_ratio);
-  if (Number.isFinite(ratio)) {
-    return ratio;
-  }
-
   const safeTotalUsd = Number(totalUsd || 0);
   if (!Number.isFinite(safeTotalUsd) || safeTotalUsd <= 0) return null;
 
   const rowUsd = Number(row?.total_price_usd || 0);
-  if (!Number.isFinite(rowUsd)) return null;
+  if (!Number.isFinite(rowUsd) || rowUsd < 0) return null;
   return (rowUsd / safeTotalUsd) * 100;
+}
+
+function sortSupplyRowsByUsdDesc(rows) {
+  return [...rows].sort((left, right) => Number(right.total_price_usd || 0) - Number(left.total_price_usd || 0));
+}
+
+function pickSupplySnapshotRows(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length) return [];
+
+  const rowsWithSnapshotId = safeRows.filter((row) => String(row.snapshot_id || "").trim() !== "");
+  if (rowsWithSnapshotId.length) {
+    const bySnapshot = new Map();
+    rowsWithSnapshotId.forEach((row) => {
+      const snapshotId = String(row.snapshot_id || "").trim();
+      const bucket = bySnapshot.get(snapshotId) || { rows: [], latestTimestamp: 0 };
+      bucket.rows.push(row);
+      const timestamp = toTimestamp(row.created_at) || 0;
+      bucket.latestTimestamp = Math.max(bucket.latestTimestamp, timestamp);
+      bySnapshot.set(snapshotId, bucket);
+    });
+
+    const latestSnapshot = Array.from(bySnapshot.entries())
+      .map(([snapshotId, bucket]) => ({
+        snapshotId,
+        latestTimestamp: bucket.latestTimestamp,
+        rows: bucket.rows
+      }))
+      .sort((left, right) => {
+        if (right.latestTimestamp !== left.latestTimestamp) {
+          return right.latestTimestamp - left.latestTimestamp;
+        }
+        return right.snapshotId.localeCompare(left.snapshotId);
+      })[0];
+
+    return sortSupplyRowsByUsdDesc(latestSnapshot?.rows || []);
+  }
+
+  const rowsWithTimestamp = safeRows
+    .map((row) => ({
+      row,
+      timestamp: toTimestamp(row.created_at)
+    }))
+    .filter((entry) => Number.isFinite(entry.timestamp))
+    .sort((left, right) => right.timestamp - left.timestamp);
+
+  if (!rowsWithTimestamp.length) {
+    return sortSupplyRowsByUsdDesc(safeRows);
+  }
+
+  const groups = [];
+  rowsWithTimestamp.forEach((entry) => {
+    const group = groups[groups.length - 1];
+    if (!group) {
+      groups.push({ latestTimestamp: entry.timestamp, entries: [entry] });
+      return;
+    }
+    const previousTimestamp = group.entries[group.entries.length - 1].timestamp;
+    if (previousTimestamp - entry.timestamp <= SUPPLY_SNAPSHOT_CLUSTER_GAP_MS) {
+      group.entries.push(entry);
+      return;
+    }
+    groups.push({ latestTimestamp: entry.timestamp, entries: [entry] });
+  });
+
+  let selectedGroup = groups[0];
+  groups.forEach((group) => {
+    if (group.entries.length > selectedGroup.entries.length) {
+      selectedGroup = group;
+      return;
+    }
+    if (group.entries.length === selectedGroup.entries.length && group.latestTimestamp > selectedGroup.latestTimestamp) {
+      selectedGroup = group;
+    }
+  });
+
+  return sortSupplyRowsByUsdDesc(selectedGroup.entries.map((entry) => entry.row));
 }
 
 function formatCurrency(value, currency = "USD", maximumFractionDigits = 2) {
@@ -636,7 +728,7 @@ function renderHistoryTablePage() {
 
 function summarizeSupplyChain(rows) {
   const totalUsd = rows.reduce((sum, row) => sum + Number(row.total_price_usd || 0), 0);
-  const topUsd = Number(rows[0]?.total_price_usd || 0);
+  const topUsd = rows.reduce((maxUsd, row) => Math.max(maxUsd, Number(row.total_price_usd || 0)), 0);
   const topShare = totalUsd > 0 ? (topUsd / totalUsd) * 100 : 0;
 
   if (elements.supplyRowsValue) {
@@ -1019,6 +1111,7 @@ function buildCompanyAiContext() {
       destination_country: row.destination_country || ""
     })),
     supply_chain: supplyRows.slice(0, 300).map((row) => ({
+      snapshot_id: row.snapshot_id || "",
       exporter: row.exporter || "",
       trades_sum: Number(row.trades_sum || 0),
       quantity: Number(row.quantity || 0),
@@ -1503,7 +1596,7 @@ async function loadCompanyDetail() {
       .limit(1000),
     supabaseClient
       .from("company_supplychain")
-      .select("exporter, trades_sum, trade_frequency_ratio, kg_weight, weight_ratio, quantity, quantity_ratio, total_price_usd, total_price_ratio, created_at")
+      .select("snapshot_id, exporter, trades_sum, trade_frequency_ratio, kg_weight, weight_ratio, quantity, quantity_ratio, total_price_usd, total_price_ratio, created_at")
       .eq("company_id", companyId)
       .order("total_price_usd", { ascending: false })
       .limit(1000)
@@ -1539,7 +1632,8 @@ async function loadCompanyDetail() {
     const rightCreated = toTimestamp(right.created_at) || 0;
     return rightCreated - leftCreated;
   });
-  const supplyRows = supplyRes.data || [];
+  const rawSupplyRows = supplyRes.data || [];
+  const supplyRows = pickSupplySnapshotRows(rawSupplyRows);
 
   const payload = {
     company,
@@ -1589,7 +1683,14 @@ bindTradeEvents();
 bindCompanyAiEvents();
 setActiveTab(detailState.activeTab);
 
-loadCompanyDetail().catch((error) => {
-  elements.companyName.textContent = "Company Detail Error";
-  setError(error?.message || "Unable to load company detail.");
-});
+async function bootstrapCompanyDetail() {
+  const session = await requireAuthenticatedSession();
+  if (!session) return;
+
+  loadCompanyDetail().catch((error) => {
+    elements.companyName.textContent = "Company Detail Error";
+    setError(error?.message || "Unable to load company detail.");
+  });
+}
+
+bootstrapCompanyDetail();
