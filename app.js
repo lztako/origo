@@ -4352,7 +4352,17 @@ async function refreshAiConversationState(preferredConversationId = null) {
 }
 
 async function clearAiConversation() {
+  const { error } = await supabaseClient
+    .from("ai_conversations")
+    .delete()
+    .not("id", "is", null);
+
+  if (error) throw error;
+
+  state.aiConversations = [];
+  state.aiActiveConversationId = null;
   state.aiMessages = [];
+  state.aiBootstrapped = false;
   state.aiHasStartedTyping = false;
   renderAiMessages();
   autoResizeAiInput();
@@ -4569,9 +4579,7 @@ async function refreshCurrentView() {
   }
 
   if (state.view === "ai-agent") {
-    state.aiMessages = [];
-    state.aiBootstrapped = false;
-    state.aiHasStartedTyping = false;
+    await clearAiConversation();
     await bootstrapAiAgent();
     return;
   }
@@ -4625,6 +4633,14 @@ elements.menuItems.forEach((item) => {
     event.preventDefault();
     const nextView = item.dataset.viewTarget;
     if (!nextView || nextView === state.view) return;
+
+    if (state.view === "ai-agent" && nextView !== "ai-agent") {
+      try {
+        await clearAiConversation();
+      } catch (error) {
+        console.warn("Unable to clear AI conversation on tab switch:", error);
+      }
+    }
 
     setActiveView(nextView);
     await refreshAll();

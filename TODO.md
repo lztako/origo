@@ -4,6 +4,10 @@
 - [x] Fix login error `Database error querying schema` ให้ล็อกอินผ่านที่ `login.html` ได้จริงสำหรับ `login@trrgroup.com`
 - [ ] รัน UI UAT ด้วย 2 บัญชี (member / non-member) ให้ครบทุก view และยืนยันผลกับทีม
 - [x] สรุป root cause + fix note ของ Auth schema/login ลงเอกสารถาวร (`AUTH_LOGIN_INCIDENT_2026-02-21.md`)
+- [ ] Batch A: ปิดประเด็น `verify_jwt=true` ให้ใช้งานได้จริง (ปัจจุบันใช้ `--no-verify-jwt` ชั่วคราว)
+- [ ] Batch A: ทำ RCA `Invalid JWT` ที่ gateway พร้อม checklist (token issuer/aud, function config, client header, project ref)
+- [ ] Batch A: หลังแก้แล้ว deploy แบบ `verify_jwt=true` และยืนยันว่า AI chat ใช้งานได้ทั้ง `app.js` และ `company-detail.js`
+- [ ] Batch A: เพิ่ม smoke test สำหรับ auth path ของ Edge Function (valid token = 200, invalid token = 401)
 
 ## P1 Important (ถัดไป)
 - [ ] AI Agent: Streaming response
@@ -12,6 +16,13 @@
 - [ ] Investigate Edge gateway `verify_jwt=true` incompatibility (`Invalid JWT`) to remove `--no-verify-jwt`
 - [ ] เพิ่ม FK `companies.status` -> `market_status_definitions.status_code` หลังยืนยันข้อมูล status สะอาด
 - [ ] Cleanup: ลบ `SPEC_AI_AGENT_CHATGPT.md` เมื่อปิดงาน AI ครบ
+- [ ] Batch B: เพิ่ม AI eval จาก 8 -> 25 เคส (ไทย/อังกฤษ, JSON/plain text, company detail, trade performance, status semantics)
+- [ ] Batch B: ตั้ง baseline metric จาก `ai_telemetry_events` (p50/p95 latency, fallback rate, rule_based rate, error rate)
+- [ ] Batch B: เพิ่มหน้า admin/SQL report สรุป telemetry รายวัน (requests, error%, avg latency, top intents)
+- [ ] Batch B: ตั้ง alert threshold (fallback > 10%, error > 2%, p95 latency > 6s)
+- [ ] Batch C: ลดความช้า company detail (lazy query เพิ่มเติม + limit payload AI context + index query ที่ใช้งานบ่อย)
+- [ ] Batch C: เพิ่ม persistence UAT สำหรับ `ai_conversations/ai_messages` (create, reload, delete, RLS isolation)
+- [ ] Batch C: เขียน runbook incident AI (`provider down`, `edge error`, `jwt fail`, `rls deny`) พร้อมวิธี rollback
 
 ## Architecture Notes (จดไว้ก่อน)
 - [ ] เพิ่มตาราง `customers` (internal customer object แยกจาก external market companies)
@@ -29,3 +40,4 @@
 - [x] เพิ่ม data-quality guard script กันข้อมูลเทสค้าง (`supabase/sql/data_quality_guard.sql`)
 - [x] เพิ่มชุดทดสอบความแม่นยำ AI แบบ live (`qa/ai_accuracy/run-ai-eval.mjs`) + เอกสารวิธีรัน
 - [x] เพิ่ม `ai_telemetry_events` + logging จาก `ai-agent` + deterministic answers สำหรับคำถามสำคัญ
+- [x] Optimize AI RLS + FK indexes สำหรับ `ai_conversations`/`ai_messages`/`ai_telemetry_events`
