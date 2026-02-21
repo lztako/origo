@@ -4965,6 +4965,12 @@ async function bootstrapDashboard() {
 
   document.body.classList.remove("auth-pending");
 
+  try {
+    await clearAiConversation();
+  } catch (error) {
+    console.warn("Unable to clear AI conversation on session bootstrap:", error);
+  }
+
   applyUrlStateFromQuery();
   syncChartFilterButtons();
   renderAiModelPill();
