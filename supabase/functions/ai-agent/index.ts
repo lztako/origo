@@ -1417,10 +1417,10 @@ async function buildCompanyDetailServerContext(client: any, question: string, cl
   };
 }
 
-async function buildReadOnlyServerContext(client: any, question: string, clientContext: any) {
+async function buildReadOnlyServerContext(client: any, question: string, clientContext: any, strictServerOnly = false) {
   const domains = detectRequestedDomains(question);
   const intents = detectRequestedIntents(question);
-  const allowedProductIds = parseAllowedProductIdsFromClientContext(clientContext);
+  const allowedProductIds = strictServerOnly ? [] : parseAllowedProductIdsFromClientContext(clientContext);
 
   if (!client) {
     return {
@@ -1484,9 +1484,11 @@ async function buildReadOnlyServerContext(client: any, question: string, clientC
   const rawProducts = byId.get("sugar_products") || [];
   const allowedProductIdSet = new Set(allowedProductIds);
   const products = domains.product
-    ? allowedProductIds.length
-      ? rawProducts.filter((row) => allowedProductIdSet.has(toNumber(row?.id)))
-      : []
+    ? strictServerOnly
+      ? rawProducts
+      : allowedProductIds.length
+        ? rawProducts.filter((row) => allowedProductIdSet.has(toNumber(row?.id)))
+        : []
     : [];
   const companies = byId.get("companies") || [];
   const marketStatusDefinitions = byId.get("market_status_definitions") || [];
@@ -1560,7 +1562,8 @@ async function buildReadOnlyServerContext(client: any, question: string, clientC
   return {
     tool_layer: {
       enabled: true,
-      mode: "allowlist-readonly-v1",
+      mode: strictServerOnly ? "allowlist-readonly-v1-server-only" : "allowlist-readonly-v1",
+      strict_server_only: strictServerOnly,
       domains_requested: domains,
       intents_requested: intents,
       tables_used: citations.map((citation) => citation.id),
@@ -1575,20 +1578,28 @@ async function buildReadOnlyServerContext(client: any, question: string, clientC
   };
 }
 
-function mergeContext(clientContext: unknown, serverContext: any) {
+function mergeContext(clientContext: unknown, serverContext: any, strictServerOnly = false) {
+  const defaultUniversePolicy = {
+    market: "external",
+    internal: ["operation", "finance", "product"],
+    cross_universe_rule:
+      "Do not merge external market and internal operation/finance/product entities unless explicit verified mapping exists."
+  };
+
+  const mergedClientContext = strictServerOnly ? {} : (clientContext || {});
   return {
     universe_policy:
-      (clientContext as any)?.universe_policy || {
-        market: "external",
-        internal: ["operation", "finance", "product"],
-        cross_universe_rule:
-          "Do not merge external market and internal operation/finance/product entities unless explicit verified mapping exists."
-      },
+      strictServerOnly
+        ? defaultUniversePolicy
+        : (clientContext as any)?.universe_policy || defaultUniversePolicy,
+    context_policy: {
+      strict_server_only: strictServerOnly
+    },
     server_context: {
       generated_at: new Date().toISOString(),
       ...serverContext
     },
-    client_context: clientContext || {}
+    client_context: mergedClientContext
   };
 }
 
@@ -1763,6 +1774,7 @@ Deno.serve(async (req: Request) => {
     const model = String(body?.model || defaultModel).trim() || defaultModel;
     const requestMode = String(body?.mode || "default").trim().toLowerCase();
     const isCompanyDetailMode = requestMode === "company_detail";
+    const strictServerOnly = body?.strict_server_only !== false;
     const prompt = trimText(body?.prompt, MAX_PROMPT_CHARS);
     const messages = normalizeMessages(Array.isArray(body?.messages) ? body.messages : [])
       .slice(-MAX_MESSAGES_FOR_MODEL);
@@ -1781,12 +1793,22 @@ Deno.serve(async (req: Request) => {
     const question = getLatestUserQuestion(prompt, messages);
     const readOnlyServerContext = isCompanyDetailMode
       ? await buildCompanyDetailServerContext(authState.client, question, clientContext)
-      : await buildReadOnlyServerContext(authState.client, question, clientContext);
-    const mergedContext = mergeContext(clientContext, readOnlyServerContext);
+      : await buildReadOnlyServerContext(authState.client, question, clientContext, strictServerOnly);
+    const mergedContext = mergeContext(clientContext, readOnlyServerContext, strictServerOnly);
+
+    const companySourceRule = strictServerOnly
+      ? "Use server_context.analytics.company_detail as sole source of truth. Ignore client_context for factual values except company_id selector."
+      : "Use server_context.analytics.company_detail as primary source of truth and client_context as supplementary context.";
+    const defaultSourceRule = strictServerOnly
+      ? "Use only server_context.analytics and server_context.focused_views as factual source. Ignore client_context for business facts."
+      : "Use server_context.analytics as primary source of truth and client_context as supplementary context.";
+    const productScopeRule = strictServerOnly
+      ? "Use product rows exactly as provided in server_context."
+      : "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope.";
 
     const systemInstruction = isCompanyDetailMode
       ? "You are an analyst for a single company detail page. " +
-        "Use server_context.analytics.company_detail as primary source of truth and client_context as supplementary context. " +
+        companySourceRule + " " +
         "Do not use or infer any global/cross-company data outside this company_id scope. " +
         "Business rule (strict): market status green means already our customer, and yellow means not yet our customer/prospect. " +
         "Never describe yellow as only watchlist/caution without saying it is not yet a customer. " +
@@ -1799,7 +1821,7 @@ Deno.serve(async (req: Request) => {
         "Output plain text only. Do not use markdown syntax such as **, __, #, or ``` blocks. " +
         "If data is insufficient, state exactly which section in server_context.analytics.company_detail is missing."
       : "You are a business analyst for a dashboard with four domains: market (external), operation (internal), finance (internal), and product (internal). " +
-        "Use server_context.analytics as primary source of truth and client_context as supplementary context. " +
+        defaultSourceRule + " " +
         "Prioritize server_context.focused_views according to server_context.intents_requested for this question. " +
         "Use only views relevant to the detected intent unless user explicitly asks cross-intent comparison. " +
         "Keep answers minimalist and concise, focusing only on the requested output. " +
@@ -1814,7 +1836,7 @@ Deno.serve(async (req: Request) => {
         "Business rule (strict): status yellow always means not yet our customer/prospect, and status green means already our customer. " +
         "Do not reinterpret yellow as only watchlist/caution without non-customer meaning. " +
         "For product/spec questions, prioritize product.summary, product.top_brands, and product.sample_products. " +
-        "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope. " +
+        productScopeRule + " " +
         "When the user asks top N and data is sufficient, return exactly N rows. " +
         "Always include numeric values and explicit month/period labels when available. " +
         "Do not include source tags or citation blocks unless the user explicitly asks for sources. " +
@@ -1877,6 +1899,7 @@ Deno.serve(async (req: Request) => {
       intents_requested: readOnlyServerContext?.intents_requested || null,
       focused_views: readOnlyServerContext?.focused_views || null,
       row_counts: readOnlyServerContext?.row_counts || {},
+      strict_server_only: strictServerOnly,
       provider_error: providerError
     });
   } catch (error) {

@@ -4456,6 +4456,7 @@ async function sendAiChatMessage() {
       model: state.aiModel,
       messages: buildAiConversationMessages(),
       context,
+      strict_server_only: true,
       requested_at: new Date().toISOString()
     });
 

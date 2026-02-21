@@ -1358,6 +1358,7 @@ async function sendCompanyAiMessage() {
       model: COMPANY_AI_MODEL,
       messages: buildCompanyAiConversationMessages(),
       context,
+      strict_server_only: true,
       requested_at: new Date().toISOString()
     });
 
