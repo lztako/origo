@@ -91,6 +91,8 @@ async function callAiAgentWithAuth(payload) {
 const TRADE_TABLE_PAGE_SIZE = 10;
 const HISTORY_TREND_MONTHS = 18;
 const COMPANY_AI_MODEL = "claude-sonnet-4-20250514";
+const TRADE_HISTORY_QUERY_LIMIT = 1000;
+const TRADE_SUPPLY_QUERY_LIMIT = 1000;
 const SUPPLY_SNAPSHOT_CLUSTER_GAP_MS = 2 * 60 * 1000;
 const SUPPLY_SANKEY_NODE_PADDING = 22;
 const SUPPLY_SANKEY_MIN_LINK_THICKNESS_PX = 6;
@@ -174,7 +176,9 @@ const detailState = {
   companyAiMessages: [],
   companyAiBootstrapped: false,
   companyAiSending: false,
-  companyAiHasStartedTyping: false
+  companyAiHasStartedTyping: false,
+  tradeDataLoading: false,
+  tradeDataLoaded: false
 };
 
 let supplySankeyChartInstance = null;
@@ -515,6 +519,10 @@ function setActiveTab(tabKey) {
 
   if (tabKey === "trade") {
     renderTradeTabVisuals();
+    if (detailState.tradeDataLoading && !detailState.tradeDataLoaded) {
+      renderTradeLoadingState();
+    }
+    void ensureTradeDataLoaded();
   }
   if (tabKey === "ai-agent") {
     bootstrapCompanyAiAgent();
@@ -656,6 +664,123 @@ function renderEmptyRow(targetBody, colSpan, text) {
       <td class="empty-cell" colspan="${colSpan}">${escapeHtml(text)}</td>
     </tr>
   `;
+}
+
+function renderTradeLoadingState() {
+  if (elements.historyRowsValue) {
+    elements.historyRowsValue.textContent = "Loading...";
+  }
+  if (elements.historyUsdValue) {
+    elements.historyUsdValue.textContent = "Loading...";
+  }
+  if (elements.historyLatestValue) {
+    elements.historyLatestValue.textContent = "Loading...";
+  }
+  if (elements.supplyRowsValue) {
+    elements.supplyRowsValue.textContent = "Loading...";
+  }
+  if (elements.supplyUsdValue) {
+    elements.supplyUsdValue.textContent = "Loading...";
+  }
+  if (elements.supplyTopShareValue) {
+    elements.supplyTopShareValue.textContent = "Loading...";
+  }
+
+  renderEmptyRow(elements.historyTableBody, 4, "Loading trade history...");
+  renderEmptyRow(elements.supplyTableBody, 6, "Loading supply chain...");
+  updatePaginationControls(0, 0, elements.historyPaginationInfo, elements.historyPrevBtn, elements.historyNextBtn);
+  updatePaginationControls(0, 0, elements.supplyPaginationInfo, elements.supplyPrevBtn, elements.supplyNextBtn);
+}
+
+function applyTradeData(historyRows, supplyRows) {
+  detailState.historyRows = Array.isArray(historyRows) ? historyRows : [];
+  detailState.historyPage = 0;
+  detailState.supplyRows = Array.isArray(supplyRows) ? supplyRows : [];
+  detailState.supplyPage = 0;
+
+  summarizeHistory(detailState.historyRows);
+  renderHistoryTablePage();
+  summarizeSupplyChain(detailState.supplyRows);
+  renderSupplyChainTablePage();
+
+  if (detailState.companyPayload) {
+    detailState.companyPayload.historyRows = detailState.historyRows;
+    detailState.companyPayload.supplyRows = detailState.supplyRows;
+    renderSummary(
+      detailState.companyPayload.company || {},
+      detailState.companyPayload.overview || {},
+      detailState.companyPayload
+    );
+  }
+
+  if (detailState.activeTab === "trade") {
+    renderTradeTabVisuals();
+  }
+}
+
+async function loadTradeData(companyId) {
+  const [historyRes, supplyRes] = await Promise.all([
+    supabaseClient
+      .from("company_history")
+      .select("date, importer, exporter, hs_code, product, product_description, origin_country, destination_country, total_price_usd, weight_kg, quantity, quantity_unit, created_at")
+      .eq("company_id", companyId)
+      .order("date", { ascending: false })
+      .limit(TRADE_HISTORY_QUERY_LIMIT),
+    supabaseClient
+      .from("company_supplychain")
+      .select("snapshot_id, exporter, trades_sum, trade_frequency_ratio, kg_weight, weight_ratio, quantity, quantity_ratio, total_price_usd, total_price_ratio, created_at")
+      .eq("company_id", companyId)
+      .order("total_price_usd", { ascending: false })
+      .limit(TRADE_SUPPLY_QUERY_LIMIT)
+  ]);
+
+  const errors = [historyRes, supplyRes]
+    .map((response) => response.error)
+    .filter(Boolean);
+
+  if (errors.length) {
+    throw errors[0];
+  }
+
+  const historyRows = historyRes.data || [];
+  historyRows.sort((left, right) => {
+    const leftDate = toTimestamp(left.date) || 0;
+    const rightDate = toTimestamp(right.date) || 0;
+    if (rightDate !== leftDate) return rightDate - leftDate;
+    const leftCreated = toTimestamp(left.created_at) || 0;
+    const rightCreated = toTimestamp(right.created_at) || 0;
+    return rightCreated - leftCreated;
+  });
+
+  const rawSupplyRows = supplyRes.data || [];
+  const supplyRows = pickSupplySnapshotRows(rawSupplyRows);
+  return { historyRows, supplyRows };
+}
+
+async function ensureTradeDataLoaded() {
+  if (detailState.tradeDataLoaded || detailState.tradeDataLoading) return;
+  if (!detailState.companyId) return;
+
+  detailState.tradeDataLoading = true;
+  if (detailState.activeTab === "trade") {
+    renderTradeLoadingState();
+  }
+
+  try {
+    const { historyRows, supplyRows } = await loadTradeData(detailState.companyId);
+    applyTradeData(historyRows, supplyRows);
+    detailState.tradeDataLoaded = true;
+  } catch (error) {
+    if (detailState.activeTab === "trade") {
+      renderEmptyRow(elements.historyTableBody, 4, "Failed to load trade history.");
+      renderEmptyRow(elements.supplyTableBody, 6, "Failed to load supply chain.");
+      updatePaginationControls(0, 0, elements.historyPaginationInfo, elements.historyPrevBtn, elements.historyNextBtn);
+      updatePaginationControls(0, 0, elements.supplyPaginationInfo, elements.supplyPrevBtn, elements.supplyNextBtn);
+    }
+    setError(error?.message || "Unable to load trade and supply data.");
+  } finally {
+    detailState.tradeDataLoading = false;
+  }
 }
 
 function renderContactsTable(rows) {
@@ -1621,15 +1746,16 @@ async function loadCompanyDetail() {
     throw new Error("Missing company_id parameter.");
   }
   detailState.companyId = companyId;
+  detailState.tradeDataLoading = false;
+  detailState.tradeDataLoaded = false;
+  applyTradeData([], []);
 
   const [
     companyRes,
     overviewRes,
     infoRes,
     emailRes,
-    contactRes,
-    historyRes,
-    supplyRes
+    contactRes
   ] = await Promise.all([
     supabaseClient
       .from("companies")
@@ -1653,22 +1779,10 @@ async function loadCompanyDetail() {
     supabaseClient
       .from("company_contract")
       .select("contact_name, position, department, business_email, tel, whatsapp, social_media, region, supplement_email_1, created_at")
-      .eq("company_id", companyId),
-    supabaseClient
-      .from("company_history")
-      .select("date, importer, exporter, hs_code, product, product_description, origin_country, destination_country, total_price_usd, weight_kg, quantity, quantity_unit, created_at")
       .eq("company_id", companyId)
-      .order("date", { ascending: false })
-      .limit(1000),
-    supabaseClient
-      .from("company_supplychain")
-      .select("snapshot_id, exporter, trades_sum, trade_frequency_ratio, kg_weight, weight_ratio, quantity, quantity_ratio, total_price_usd, total_price_ratio, created_at")
-      .eq("company_id", companyId)
-      .order("total_price_usd", { ascending: false })
-      .limit(1000)
   ]);
 
-  const errors = [companyRes, overviewRes, infoRes, emailRes, contactRes, historyRes, supplyRes]
+  const errors = [companyRes, overviewRes, infoRes, emailRes, contactRes]
     .map((response) => response.error)
     .filter(Boolean);
 
@@ -1689,17 +1803,6 @@ async function loadCompanyDetail() {
     ...row,
     contact_name: contactEmailNameMap.get(normalizeEmail(row.email)) || ""
   }));
-  const historyRows = historyRes.data || [];
-  historyRows.sort((left, right) => {
-    const leftDate = toTimestamp(left.date) || 0;
-    const rightDate = toTimestamp(right.date) || 0;
-    if (rightDate !== leftDate) return rightDate - leftDate;
-    const leftCreated = toTimestamp(left.created_at) || 0;
-    const rightCreated = toTimestamp(right.created_at) || 0;
-    return rightCreated - leftCreated;
-  });
-  const rawSupplyRows = supplyRes.data || [];
-  const supplyRows = pickSupplySnapshotRows(rawSupplyRows);
 
   const payload = {
     company,
@@ -1707,8 +1810,8 @@ async function loadCompanyDetail() {
     info,
     emails,
     contacts,
-    historyRows,
-    supplyRows
+    historyRows: [],
+    supplyRows: []
   };
   detailState.companyPayload = payload;
   detailState.companyAiMessages = [];
@@ -1724,23 +1827,19 @@ async function loadCompanyDetail() {
   renderKeyValueRows(elements.organizationTableBody, buildOrganizationRows(info));
   renderContactsTable(contacts);
   renderEmailsTable(emails);
-  summarizeHistory(historyRows);
-  detailState.historyRows = historyRows;
-  detailState.historyPage = 0;
-  renderHistoryTablePage();
-  summarizeSupplyChain(supplyRows);
-  detailState.supplyRows = supplyRows;
-  detailState.supplyPage = 0;
   detailState.companyName = String(company.customer || "").trim() || "Target Company";
-  renderSupplyChainTablePage();
 
   if (elements.historyTrendMetric) {
     elements.historyTrendMetric.value = detailState.historyTrendMetric;
   }
 
   if (detailState.activeTab === "trade") {
-    renderTradeTabVisuals();
+    renderTradeLoadingState();
   }
+
+  window.setTimeout(() => {
+    void ensureTradeDataLoaded();
+  }, 0);
 }
 
 bindTabEvents();
