@@ -166,7 +166,16 @@ function toJson(body: unknown, status = 200): Response {
 }
 
 function toNumber(value: unknown): number {
-  const numeric = Number(value ?? 0);
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const text = String(value ?? "")
+    .trim()
+    .replace(/[, ]+/g, "");
+  if (!text) return 0;
+
+  const numeric = Number(text);
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
@@ -1086,6 +1095,320 @@ function parseAllowedProductIdsFromClientContext(clientContext: any): number[] {
   return Array.from(new Set(normalized));
 }
 
+function extractCompanyIdFromClientContext(clientContext: any): string {
+  const candidates = [
+    clientContext?.context_scope?.company_id,
+    clientContext?.company?.company_id,
+    clientContext?.company_id
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+async function buildCompanyDetailServerContext(client: any, question: string, clientContext: any) {
+  const companyId = extractCompanyIdFromClientContext(clientContext);
+  if (!companyId) {
+    return {
+      tool_layer: {
+        enabled: true,
+        mode: "company-detail-supabase-readonly-v1",
+        reason: "Missing company_id in client_context"
+      },
+      source_citations: [],
+      row_counts: {},
+      domains_requested: null,
+      intents_requested: null,
+      focused_views: {
+        question,
+        intents: { company_detail: true },
+        views: {}
+      },
+      analytics: {
+        company_detail: null
+      }
+    };
+  }
+
+  const querySpecs: Array<{ id: string; table: string; domain: "market"; fields: string[]; note: string }> = [
+    {
+      id: "company_detail_company",
+      table: "companies",
+      fields: ["company_id", "customer", "location", "status", "trades", "supplier_number", "value_tag", "latest_purchase_time"],
+      note: "Single company identity row"
+    },
+    {
+      id: "company_detail_overview",
+      table: "company_overview",
+      fields: [
+        "company_id",
+        "total_purchase_value",
+        "purchase_value_last_12m",
+        "purchase_frequency_per_year",
+        "latest_purchase_date",
+        "purchase_interval_days",
+        "is_active",
+        "updated_at"
+      ],
+      note: "Single company overview metrics"
+    },
+    {
+      id: "company_detail_info",
+      table: "company_info",
+      fields: ["company_id", "company_profile", "linkedin", "created_at"],
+      note: "Single company profile row"
+    },
+    {
+      id: "company_detail_email",
+      table: "company_email",
+      fields: ["email", "importance", "source", "created_at"],
+      note: "Known company emails"
+    },
+    {
+      id: "company_detail_contacts",
+      table: "company_contract",
+      fields: ["contact_name", "position", "department", "business_email", "region", "created_at"],
+      note: "Company contacts"
+    },
+    {
+      id: "company_detail_history",
+      table: "company_history",
+      fields: ["date", "importer", "exporter", "product", "product_description", "quantity", "quantity_unit", "total_price_usd", "created_at"],
+      note: "Company trade history sample"
+    },
+    {
+      id: "company_detail_supply",
+      table: "company_supplychain",
+      fields: ["snapshot_id", "exporter", "trades_sum", "quantity", "kg_weight", "total_price_usd", "total_price_ratio", "created_at"],
+      note: "Company supply chain sample"
+    },
+    {
+      id: "company_detail_status_defs",
+      table: "market_status_definitions",
+      fields: ["status_code", "label_th", "label_en", "is_customer", "description", "sort_order"],
+      note: "Status semantic definitions"
+    }
+  ];
+
+  const [
+    companyRes,
+    overviewRes,
+    infoRes,
+    emailRes,
+    contactRes,
+    historyRes,
+    supplyRes,
+    statusDefsRes
+  ] = await Promise.all([
+    client
+      .from("companies")
+      .select("company_id, customer, location, status, trades, supplier_number, value_tag, latest_purchase_time")
+      .eq("company_id", companyId)
+      .maybeSingle(),
+    client
+      .from("company_overview")
+      .select("company_id, total_purchase_value, purchase_value_last_12m, purchase_frequency_per_year, latest_purchase_date, purchase_interval_days, is_active, updated_at")
+      .eq("company_id", companyId)
+      .maybeSingle(),
+    client
+      .from("company_info")
+      .select("company_id, company_profile, linkedin, created_at")
+      .eq("company_id", companyId)
+      .maybeSingle(),
+    client
+      .from("company_email")
+      .select("email, importance, source, created_at")
+      .eq("company_id", companyId)
+      .limit(200),
+    client
+      .from("company_contract")
+      .select("contact_name, position, department, business_email, region, created_at")
+      .eq("company_id", companyId)
+      .limit(200),
+    client
+      .from("company_history")
+      .select("date, importer, exporter, product, product_description, quantity, quantity_unit, total_price_usd, created_at")
+      .eq("company_id", companyId)
+      .order("date", { ascending: false })
+      .limit(500),
+    client
+      .from("company_supplychain")
+      .select("snapshot_id, exporter, trades_sum, quantity, kg_weight, total_price_usd, total_price_ratio, created_at")
+      .eq("company_id", companyId)
+      .order("total_price_usd", { ascending: false })
+      .limit(500),
+    client
+      .from("market_status_definitions")
+      .select("status_code, label_th, label_en, is_customer, description, sort_order")
+      .order("sort_order", { ascending: true })
+      .limit(100)
+  ]);
+
+  const responses = [companyRes, overviewRes, infoRes, emailRes, contactRes, historyRes, supplyRes, statusDefsRes];
+  const errors = responses
+    .map((response) => response.error)
+    .filter(Boolean);
+
+  const citations: SourceCitation[] = querySpecs.map((spec, index) => {
+    const response = responses[index];
+    const data = response?.data;
+    const rowCount = Array.isArray(data) ? data.length : data ? 1 : 0;
+    return {
+      id: spec.id,
+      table: spec.table,
+      domain: spec.domain,
+      fields: spec.fields,
+      row_count: rowCount,
+      note: spec.note
+    };
+  });
+
+  const rowCounts: Record<string, number> = {};
+  citations.forEach((citation) => {
+    rowCounts[citation.id] = citation.row_count;
+  });
+
+  if (errors.length) {
+    return {
+      tool_layer: {
+        enabled: true,
+        mode: "company-detail-supabase-readonly-v1",
+        errors: errors.map((error: any) => String(error?.message || error))
+      },
+      source_citations: citations,
+      row_counts: rowCounts,
+      domains_requested: null,
+      intents_requested: null,
+      focused_views: {
+        question,
+        intents: { company_detail: true },
+        views: {}
+      },
+      analytics: {
+        company_detail: null
+      }
+    };
+  }
+
+  const company = companyRes.data || null;
+  const overview = overviewRes.data || {};
+  const info = infoRes.data || {};
+  const emails = Array.isArray(emailRes.data) ? emailRes.data : [];
+  const contacts = Array.isArray(contactRes.data) ? contactRes.data : [];
+  const historyRows = Array.isArray(historyRes.data) ? historyRes.data : [];
+  const supplyRows = Array.isArray(supplyRes.data) ? supplyRes.data : [];
+  const statusDefinitions = buildMarketStatusDefinitions(Array.isArray(statusDefsRes.data) ? statusDefsRes.data : []);
+  const currentStatus = normalizeMarketStatus(company?.status);
+  const statusDefinition = statusDefinitions.find((item: any) => String(item?.status_code || "") === currentStatus) || null;
+
+  const totalPurchaseValue = toNumber(overview?.total_purchase_value);
+  const purchaseValueLast12m = toNumber(overview?.purchase_value_last_12m);
+  const historyTotalUsd = historyRows.reduce((sum: number, row: any) => sum + toNumber(row?.total_price_usd), 0);
+  const supplyTotalUsd = supplyRows.reduce((sum: number, row: any) => sum + toNumber(row?.total_price_usd), 0);
+
+  const analytics = {
+    company_detail: {
+      company: {
+        company_id: String(company?.company_id || companyId),
+        customer: String(company?.customer || ""),
+        location: String(company?.location || ""),
+        status: currentStatus,
+        status_definition: statusDefinition,
+        trades: toNumber(company?.trades),
+        supplier_number: toNumber(company?.supplier_number),
+        value_tag: company?.value_tag || null,
+        latest_purchase_time: company?.latest_purchase_time || null
+      },
+      metrics: {
+        total_purchase_value: totalPurchaseValue,
+        purchase_value_last_12m: purchaseValueLast12m,
+        purchase_frequency_per_year: toNumber(overview?.purchase_frequency_per_year),
+        purchase_interval_days: toNumber(overview?.purchase_interval_days),
+        latest_purchase_date: overview?.latest_purchase_date || null,
+        is_active: overview?.is_active ?? null
+      },
+      metric_definitions: {
+        total_purchase_value: "Cumulative total purchase value for this company (not limited to last 12 months).",
+        purchase_value_last_12m: "Rolling purchase value for the most recent 12 months only."
+      },
+      overview: {
+        business_overview: overview?.business_overview || "",
+        procurement_overview: overview?.procurement_overview || "",
+        updated_at: overview?.updated_at || null
+      },
+      profile: {
+        company_profile: info?.company_profile || "",
+        linkedin: info?.linkedin || ""
+      },
+      contacts_summary: {
+        contacts_count: contacts.length,
+        emails_count: emails.length,
+        sample_contacts: contacts.slice(0, 20).map((row: any) => ({
+          contact_name: row?.contact_name || "",
+          position: row?.position || "",
+          department: row?.department || "",
+          business_email: row?.business_email || "",
+          region: row?.region || ""
+        }))
+      },
+      trade_history_summary: {
+        rows_total: historyRows.length,
+        total_price_usd: Number(historyTotalUsd.toFixed(2)),
+        latest_trade_date: historyRows.find((row: any) => row?.date)?.date || null,
+        sample_rows: historyRows.slice(0, 30).map((row: any) => ({
+          date: row?.date || null,
+          importer: row?.importer || "",
+          exporter: row?.exporter || "",
+          product: row?.product || row?.product_description || "",
+          quantity: toNumber(row?.quantity),
+          quantity_unit: row?.quantity_unit || "",
+          total_price_usd: toNumber(row?.total_price_usd)
+        }))
+      },
+      supply_chain_summary: {
+        rows_total: supplyRows.length,
+        total_price_usd: Number(supplyTotalUsd.toFixed(2)),
+        top_exporters: supplyRows
+          .slice(0, 20)
+          .map((row: any) => ({
+            exporter: row?.exporter || "",
+            trades_sum: toNumber(row?.trades_sum),
+            quantity: toNumber(row?.quantity),
+            total_price_usd: toNumber(row?.total_price_usd),
+            total_price_ratio: toNumber(row?.total_price_ratio)
+          }))
+      },
+      status_definitions: statusDefinitions
+    }
+  };
+
+  return {
+    tool_layer: {
+      enabled: true,
+      mode: "company-detail-supabase-readonly-v1",
+      company_id: companyId,
+      tables_used: citations.map((citation) => citation.id),
+      errors: []
+    },
+    source_citations: citations,
+    row_counts: rowCounts,
+    domains_requested: null,
+    intents_requested: { company_detail: true },
+    focused_views: {
+      question,
+      intents: { company_detail: true },
+      views: {
+        company_metrics: analytics.company_detail.metrics,
+        company_status: analytics.company_detail.company.status_definition
+      }
+    },
+    analytics
+  };
+}
+
 async function buildReadOnlyServerContext(client: any, question: string, clientContext: any) {
   const domains = detectRequestedDomains(question);
   const intents = detectRequestedIntents(question);
@@ -1449,37 +1772,24 @@ Deno.serve(async (req: Request) => {
 
     const question = getLatestUserQuestion(prompt, messages);
     const readOnlyServerContext = isCompanyDetailMode
-      ? {
-          tool_layer: {
-            enabled: false,
-            mode: "company-detail-client-context-v1",
-            reason: "Company detail mode uses client_context only for strict single-company scope"
-          },
-          source_citations: [],
-          row_counts: {},
-          domains_requested: null,
-          intents_requested: null,
-          focused_views: {
-            question,
-            intents: {},
-            views: {}
-          },
-          analytics: null
-        }
+      ? await buildCompanyDetailServerContext(authState.client, question, clientContext)
       : await buildReadOnlyServerContext(authState.client, question, clientContext);
     const mergedContext = mergeContext(clientContext, readOnlyServerContext);
 
     const systemInstruction = isCompanyDetailMode
       ? "You are an analyst for a single company detail page. " +
-        "Use only client_context as the source of truth. " +
-        "Do not use or infer any global/cross-company data that is not explicitly present in client_context. " +
+        "Use server_context.analytics.company_detail as primary source of truth and client_context as supplementary context. " +
+        "Do not use or infer any global/cross-company data outside this company_id scope. " +
         "Business rule (strict): market status green means already our customer, and yellow means not yet our customer/prospect. " +
         "Never describe yellow as only watchlist/caution without saying it is not yet a customer. " +
+        "Metric mapping is strict: total_purchase_value means cumulative total purchase value, while purchase_value_last_12m means rolling 12-month value. " +
+        "Never swap total_purchase_value with purchase_value_last_12m. " +
+        "If user asks for a single metric (for example, Total Purchase Value), answer with that metric only and do not append unrelated notes unless asked. " +
         "Keep answers concise, practical, and numeric when possible. " +
         "Always include explicit period labels when discussing trends. " +
         "Do not include source tags/citation blocks unless explicitly requested by user. " +
         "Output plain text only. Do not use markdown syntax such as **, __, #, or ``` blocks. " +
-        "If data is insufficient, state exactly which section in client_context is missing."
+        "If data is insufficient, state exactly which section in server_context.analytics.company_detail is missing."
       : "You are a business analyst for a dashboard with four domains: market (external), operation (internal), finance (internal), and product (internal). " +
         "Use server_context.analytics as primary source of truth and client_context as supplementary context. " +
         "Prioritize server_context.focused_views according to server_context.intents_requested for this question. " +

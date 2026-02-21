@@ -214,6 +214,15 @@ function formatNumber(value, maximumFractionDigits = 0) {
   return numeric.toLocaleString("en-US", { maximumFractionDigits });
 }
 
+function toNumericValue(value) {
+  const text = String(value ?? "")
+    .trim()
+    .replace(/[, ]+/g, "");
+  if (!text) return 0;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function formatPercent(value, digits = 1) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
@@ -1272,11 +1281,20 @@ function buildCompanyAiContext() {
       trades: Number(company.trades || 0),
       supplier_number: Number(company.supplier_number || 0),
       latest_purchase_time: company.latest_purchase_time || null,
-      purchase_value_last_12m: Number(overview.purchase_value_last_12m || 0),
+      total_purchase_value: toNumericValue(overview.total_purchase_value),
+      purchase_value_last_12m: toNumericValue(overview.purchase_value_last_12m),
+      purchase_frequency_per_year: toNumericValue(overview.purchase_frequency_per_year),
+      purchase_interval_days: toNumericValue(overview.purchase_interval_days),
+      latest_purchase_date: overview.latest_purchase_date || null,
+      is_active: overview.is_active ?? null,
       business_overview: String(overview.business_overview || ""),
       procurement_overview: String(overview.procurement_overview || ""),
       company_profile: String(info.company_profile || ""),
       linkedin: String(info.linkedin || "")
+    },
+    metric_definitions: {
+      total_purchase_value: "Cumulative total purchase value for this company.",
+      purchase_value_last_12m: "Rolling purchase value for the last 12 months."
     },
     contacts: contacts.slice(0, 120).map((row) => ({
       contact_name: row.contact_name || "",
