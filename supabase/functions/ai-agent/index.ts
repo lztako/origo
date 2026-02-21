@@ -281,8 +281,16 @@ function getLatestUserQuestion(prompt: string, messages: NormalizedMessage[]): s
 function detectRequestedDomains(question: string): DomainSelection {
   const normalized = String(question || "").toLowerCase();
 
-  const finance = /(finance|invoice|usd|thb|credit|customer_name|billing|revenue|top\s*customer)/i.test(normalized);
-  const operation = /(operation|contract|delivery|deliveries|planned|fulfilled|fulfillment|stock|ton|tons|job|overdue)/i.test(normalized);
+  const internalPerformance = /(trade\s*performance|performance\s*summary|overall\s*performance|business\s*performance|ผลงานการค้า|สรุปผลงาน|สรุปผลการดำเนินงาน|ภาพรวมผลงาน)/i.test(
+    normalized
+  );
+
+  const finance =
+    /(finance|invoice|usd|thb|credit|customer_name|billing|revenue|top\s*customer)/i.test(normalized) ||
+    internalPerformance;
+  const operation =
+    /(operation|contract|delivery|deliveries|planned|fulfilled|fulfillment|stock|ton|tons|job|overdue)/i.test(normalized) ||
+    internalPerformance;
   const market = /(market|company|companies|trade|supplier|country|external|intelligence)/i.test(normalized);
   const product =
     /(product|products|sku|catalog|spec|specification|ref|brand|icumsa|polarization|origin|sugar_products|สินค้า|แคตตาล็อก|สเปค|น้ำตาล)/i.test(
