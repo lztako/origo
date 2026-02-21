@@ -54,6 +54,40 @@ async function getValidAccessTokenOrRedirect() {
   throw new Error("Session expired. Please sign in again.");
 }
 
+async function callAiAgentWithAuth(payload) {
+  const accessToken = await getValidAccessTokenOrRedirect();
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  let responseBody = null;
+  try {
+    responseBody = await response.json();
+  } catch (_error) {
+    responseBody = null;
+  }
+
+  if (!response.ok) {
+    const status = Number(response.status || 0);
+    const errorMessage = String(
+      responseBody?.error ||
+      responseBody?.message ||
+      `Edge Function error (status ${status || "unknown"})`
+    );
+    const wrappedError = new Error(errorMessage);
+    wrappedError.status = status;
+    throw wrappedError;
+  }
+
+  return responseBody || {};
+}
+
 const TRADE_TABLE_PAGE_SIZE = 10;
 const HISTORY_TREND_MONTHS = 18;
 const COMPANY_AI_MODEL = "claude-sonnet-4-20250514";
@@ -1163,21 +1197,13 @@ async function sendCompanyAiMessage() {
     renderCompanyAiMessages();
 
     const context = buildCompanyAiContext();
-    const accessToken = await getValidAccessTokenOrRedirect();
-    const { data, error } = await supabaseClient.functions.invoke("ai-agent", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: {
-        mode: "company_detail",
-        model: COMPANY_AI_MODEL,
-        messages: buildCompanyAiConversationMessages(),
-        context,
-        requested_at: new Date().toISOString()
-      }
+    const data = await callAiAgentWithAuth({
+      mode: "company_detail",
+      model: COMPANY_AI_MODEL,
+      messages: buildCompanyAiConversationMessages(),
+      context,
+      requested_at: new Date().toISOString()
     });
-
-    if (error) throw error;
 
     const answer = normalizeCompanyAiAssistantText(extractCompanyAiAnswer(data) || "No answer returned.");
     const modelName = String(data?.model || COMPANY_AI_MODEL);
@@ -1191,20 +1217,15 @@ async function sendCompanyAiMessage() {
     renderCompanyAiMessages();
   } catch (error) {
     const rawMessage = String(error?.message || "Unknown error");
+    const statusCode = Number(error?.status || 0);
     let friendly = rawMessage;
     const lowered = rawMessage.toLowerCase();
-    if (lowered.includes("failed to send") || lowered.includes("fetch")) {
+    if (statusCode === 401 || lowered.includes("unauthorized")) {
+      friendly = "AI Agent unauthorized (401). Please sign out and sign in again.";
+    } else if (lowered.includes("failed to send") || lowered.includes("fetch")) {
       friendly = "Unable to reach Edge Function. Ensure function \"ai-agent\" is deployed and reachable.";
     } else if (lowered.includes("404")) {
       friendly = "Edge Function \"ai-agent\" not found. Deploy it before running chat.";
-    } else if (
-      lowered.includes("401") ||
-      lowered.includes("unauthorized") ||
-      lowered.includes("non-2xx")
-    ) {
-      friendly = "Session expired or missing access token. Please sign in again.";
-      await supabaseClient.auth.signOut().catch(() => {});
-      redirectToLoginPage();
     }
 
     detailState.companyAiMessages = detailState.companyAiMessages.filter((message) => !message.isPending);

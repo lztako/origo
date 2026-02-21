@@ -363,6 +363,40 @@ async function getValidAccessTokenOrRedirect() {
   redirectToLoginPage();
   throw new Error("Session expired. Please sign in again.");
 }
+
+async function callAiAgentWithAuth(payload) {
+  const accessToken = await getValidAccessTokenOrRedirect();
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-agent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  let responseBody = null;
+  try {
+    responseBody = await response.json();
+  } catch (_error) {
+    responseBody = null;
+  }
+
+  if (!response.ok) {
+    const status = Number(response.status || 0);
+    const errorMessage = String(
+      responseBody?.error ||
+      responseBody?.message ||
+      `Edge Function error (status ${status || "unknown"})`
+    );
+    const wrappedError = new Error(errorMessage);
+    wrappedError.status = status;
+    throw wrappedError;
+  }
+
+  return responseBody || {};
+}
 const MARKET_MAP_COLOR_GREEN = "rgba(34, 197, 94, 0.78)";
 const MARKET_MAP_COLOR_YELLOW = "rgba(251, 191, 36, 0.78)";
 const MARKET_MAP_COLOR_ORANGE = "rgba(249, 115, 22, 0.82)";
@@ -4405,20 +4439,12 @@ async function sendAiChatMessage() {
     scrollAiToBottom("smooth");
 
     const context = await buildAiAgentContext();
-    const accessToken = await getValidAccessTokenOrRedirect();
-    const { data, error } = await supabaseClient.functions.invoke("ai-agent", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: {
-        model: state.aiModel,
-        messages: buildAiConversationMessages(),
-        context,
-        requested_at: new Date().toISOString()
-      }
+    const data = await callAiAgentWithAuth({
+      model: state.aiModel,
+      messages: buildAiConversationMessages(),
+      context,
+      requested_at: new Date().toISOString()
     });
-
-    if (error) throw error;
 
     const answerRaw = extractAiAgentAnswer(data) || "No answer returned.";
     const answer = normalizeAiAssistantText(answerRaw);
@@ -4440,20 +4466,15 @@ async function sendAiChatMessage() {
     renderAiMessages();
   } catch (error) {
     const rawMessage = String(error?.message || "Unknown error");
+    const statusCode = Number(error?.status || 0);
     let friendly = rawMessage;
     const lowered = rawMessage.toLowerCase();
-    if (lowered.includes("failed to send") || lowered.includes("fetch")) {
+    if (statusCode === 401 || lowered.includes("unauthorized")) {
+      friendly = "AI Agent unauthorized (401). Please sign out and sign in again.";
+    } else if (lowered.includes("failed to send") || lowered.includes("fetch")) {
       friendly = "Unable to reach Edge Function. Ensure function \"ai-agent\" is deployed and reachable.";
     } else if (lowered.includes("404")) {
       friendly = "Edge Function \"ai-agent\" not found. Deploy it before running chat.";
-    } else if (
-      lowered.includes("401") ||
-      lowered.includes("unauthorized") ||
-      lowered.includes("non-2xx")
-    ) {
-      friendly = "Session expired or missing access token. Please sign in again.";
-      await supabaseClient.auth.signOut().catch(() => {});
-      redirectToLoginPage();
     }
 
     state.aiMessages = state.aiMessages.filter((message) => !message.isPending);
