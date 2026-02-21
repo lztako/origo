@@ -46,6 +46,10 @@
       color: var(--text);
     }
 
+    body.auth-pending .layout {
+      visibility: hidden;
+    }
+
     .container {
       max-width: none;
       margin: 0;
@@ -875,7 +879,7 @@
   <link rel="stylesheet" href="themes/theme-legacy.css?v=20260217-theme-library-v1">
   <link rel="stylesheet" href="themes/theme-mono.css?v=20260217-theme-library-v1">
 </head>
-<body>
+<body class="auth-pending">
   <div class="layout">
     <aside class="sidebar">
       <nav class="menu" aria-label="Company detail sections">
@@ -1134,6 +1138,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.14.0/dist/chartjs-chart-sankey.min.js"></script>
-  <script src="company-detail.js?v=20260221-auth-guard-v1"></script>
+  <script src="company-detail.js?v=20260221-auth-guard-v2"></script>
 </body>
 </html>

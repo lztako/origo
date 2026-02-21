@@ -1694,6 +1694,8 @@ async function bootstrapCompanyDetail() {
   const session = await requireAuthenticatedSession();
   if (!session) return;
 
+  document.body.classList.remove("auth-pending");
+
   loadCompanyDetail().catch((error) => {
     elements.companyName.textContent = "Company Detail Error";
     setError(error?.message || "Unable to load company detail.");

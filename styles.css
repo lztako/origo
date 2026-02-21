@@ -35,6 +35,10 @@ body {
   color: var(--text);
 }
 
+body.auth-pending .layout {
+  visibility: hidden;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

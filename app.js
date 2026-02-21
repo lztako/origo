@@ -4847,6 +4847,8 @@ async function bootstrapDashboard() {
   const session = await requireAuthenticatedSession();
   if (!session) return;
 
+  document.body.classList.remove("auth-pending");
+
   applyUrlStateFromQuery();
   syncChartFilterButtons();
   renderAiModelPill();

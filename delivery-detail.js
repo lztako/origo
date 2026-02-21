@@ -197,6 +197,8 @@ async function bootstrapDeliveryDetail() {
   const session = await requireAuthenticatedSession();
   if (!session) return;
 
+  document.body.classList.remove("auth-pending");
+
   loadDeliveryDetail().catch((error) => {
     elements.pageTitle.textContent = "Delivery Detail Error";
     setError(error?.message || "Unable to load delivery detail.");
