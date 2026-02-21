@@ -18,13 +18,20 @@ function redirectToLoginPage() {
 
 async function requireAuthenticatedSession() {
   try {
-    const { data, error } = await supabaseClient.auth.getSession();
-    if (error) throw error;
-    if (!data?.session) {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError || !sessionData?.session) {
       redirectToLoginPage();
       return null;
     }
-    return data.session;
+
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !userData?.user) {
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
+      return null;
+    }
+
+    return sessionData.session;
   } catch (_error) {
     redirectToLoginPage();
     return null;

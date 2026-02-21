@@ -322,13 +322,21 @@ function redirectToLoginPage() {
 
 async function requireAuthenticatedSession() {
   try {
-    const { data, error } = await supabaseClient.auth.getSession();
-    if (error) throw error;
-    if (!data?.session) {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError || !sessionData?.session) {
       redirectToLoginPage();
       return null;
     }
-    return data.session;
+
+    // Validate token against Auth service to avoid stale local sessions.
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !userData?.user) {
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
+      return null;
+    }
+
+    return sessionData.session;
   } catch (_error) {
     redirectToLoginPage();
     return null;
@@ -3230,8 +3238,25 @@ async function loadMarketMetric() {
     .limit(5000);
 
   if (error) {
+    const lowered = String(error.message || "").toLowerCase();
+    if (error.code === "42501" || lowered.includes("permission denied")) {
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
+      return {
+        byCode: new Map(),
+        tableRows: [],
+        coverage: {
+          totalRows: 0,
+          mappedRows: 0,
+          totalLocationGroups: 0,
+          mappedLocationGroups: 0,
+          unmappedLocations: []
+        }
+      };
+    }
+
     const notFoundCode = error.code === "PGRST205";
-    const relationMissing = String(error.message || "").toLowerCase().includes("does not exist");
+    const relationMissing = lowered.includes("does not exist");
     if (notFoundCode || relationMissing) {
       return {
         byCode: new Map(),

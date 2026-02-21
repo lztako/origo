@@ -47,11 +47,16 @@ function setSubmitting(isSubmitting) {
 }
 
 async function redirectIfAuthenticated(nextPath) {
-  const { data, error } = await supabaseClient.auth.getSession();
-  if (error) return;
-  if (data?.session) {
-    window.location.replace(nextPath);
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError || !sessionData?.session) return;
+
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+  if (userError || !userData?.user) {
+    await supabaseClient.auth.signOut().catch(() => {});
+    return;
   }
+
+  window.location.replace(nextPath);
 }
 
 async function handleLoginSubmit(event) {
