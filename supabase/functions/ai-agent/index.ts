@@ -1793,6 +1793,147 @@ function buildFallbackAnswer(question: string, serverContext: any, reason: strin
   return lines.join("\n");
 }
 
+function toJsonSafe<T>(value: unknown, fallback: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value ?? fallback));
+  } catch {
+    return fallback;
+  }
+}
+
+function asksTradePerformance(question: string): boolean {
+  return /(trade\s*performance|overall\s*performance|business\s*performance|ผลงานการค้า|สรุป\s*trade\s*performance|สรุปผลงาน|สรุปผลการดำเนินงาน|ภาพรวมผลงาน)/i.test(
+    String(question || "")
+  );
+}
+
+function asksTotalPurchaseValue(question: string): boolean {
+  return /(total\s*purchase\s*value|มูลค่าซื้อรวม|มูลค่าการซื้อรวม|ยอดซื้อรวม|มูลค่าซื้อทั้งหมด)/i.test(String(question || ""));
+}
+
+function asksLast12mPurchaseValue(question: string): boolean {
+  return /(purchase\s*value\s*last\s*12m|last\s*12\s*months|12m|12\s*เดือน|ช่วง\s*12\s*เดือน|ย้อนหลัง\s*12\s*เดือน)/i.test(
+    String(question || "")
+  );
+}
+
+function buildDeterministicDefaultAnswer(question: string, expectsJson: boolean, serverContext: any): string | null {
+  const normalizedQuestion = String(question || "").toLowerCase();
+  const financeSummary = serverContext?.analytics?.finance?.summary || null;
+  const operationSummary = serverContext?.analytics?.operation?.summary || null;
+
+  if (
+    expectsJson &&
+    /\btotal_invoices\b/.test(normalizedQuestion) &&
+    /\btotal_usd\b/.test(normalizedQuestion) &&
+    financeSummary
+  ) {
+    return JSON.stringify(
+      {
+        total_invoices: toNumber(financeSummary.total_invoices),
+        total_usd: Number(toNumber(financeSummary.total_usd).toFixed(2))
+      },
+      null,
+      2
+    );
+  }
+
+  if (asksTradePerformance(question) && (financeSummary || operationSummary)) {
+    const lines: string[] = [];
+    lines.push("สรุป Trade Performance:");
+    if (financeSummary) {
+      lines.push(
+        `Finance: ${formatMetricNumber(financeSummary.total_invoices)} invoices, ` +
+          `${formatMetricNumber(financeSummary.total_tons)} tons, ` +
+          `${formatMetricNumber(financeSummary.total_usd)} USD`
+      );
+    }
+    if (operationSummary) {
+      lines.push(
+        `Operation: planned ${formatMetricNumber(operationSummary.planned_tons_total)} tons, ` +
+          `delivered ${formatMetricNumber(operationSummary.delivered_tons_estimate)} tons, ` +
+          `overdue ${formatMetricNumber(operationSummary.overdue_lines)} lines`
+      );
+    }
+    return lines.join("\n");
+  }
+
+  return null;
+}
+
+function buildDeterministicCompanyDetailAnswer(question: string, expectsJson: boolean, serverContext: any): string | null {
+  const normalizedQuestion = String(question || "").toLowerCase();
+  const detail = serverContext?.analytics?.company_detail || null;
+  const metrics = detail?.metrics || null;
+  const company = detail?.company || null;
+  if (!detail || !metrics || !company) return null;
+
+  if (expectsJson) {
+    if (
+      /\btotal_purchase_value\b/.test(normalizedQuestion) &&
+      /\bpurchase_value_last_12m\b/.test(normalizedQuestion)
+    ) {
+      return JSON.stringify(
+        {
+          total_purchase_value: Number(toNumber(metrics.total_purchase_value).toFixed(2)),
+          purchase_value_last_12m: Number(toNumber(metrics.purchase_value_last_12m).toFixed(2))
+        },
+        null,
+        2
+      );
+    }
+
+    if (/\bstatus\b/.test(normalizedQuestion) && /\bis_customer\b/.test(normalizedQuestion)) {
+      const statusDef = company?.status_definition || null;
+      const isCustomer = typeof statusDef?.is_customer === "boolean" ? statusDef.is_customer : null;
+      return JSON.stringify(
+        {
+          status: normalizeMarketStatus(company?.status),
+          is_customer: isCustomer
+        },
+        null,
+        2
+      );
+    }
+  }
+
+  const asksTotal = asksTotalPurchaseValue(question);
+  const asksLast12m = asksLast12mPurchaseValue(question);
+  if (asksTotal && !asksLast12m) {
+    return `Total Purchase Value: ${formatMetricNumber(metrics.total_purchase_value)}`;
+  }
+  if (asksLast12m && !asksTotal) {
+    return `Purchase Value (Last 12M): ${formatMetricNumber(metrics.purchase_value_last_12m)}`;
+  }
+
+  return null;
+}
+
+function buildDeterministicAnswer(input: {
+  question: string;
+  expectsJson: boolean;
+  isCompanyDetailMode: boolean;
+  serverContext: any;
+}): string | null {
+  if (input.isCompanyDetailMode) {
+    return buildDeterministicCompanyDetailAnswer(input.question, input.expectsJson, input.serverContext);
+  }
+  return buildDeterministicDefaultAnswer(input.question, input.expectsJson, input.serverContext);
+}
+
+async function writeAiTelemetryEvent(client: any, payload: Record<string, unknown>) {
+  if (!client) return;
+  try {
+    const safePayload = toJsonSafe(payload, {});
+    const { error } = await client.from("ai_telemetry_events").insert(safePayload);
+    if (error) {
+      console.error("ai_telemetry_events insert failed:", error.message || error);
+    }
+  } catch (error) {
+    console.error("ai_telemetry_events insert exception:", String((error as Error)?.message || error));
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1803,6 +1944,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const requestStartedAt = Date.now();
     const body = await req.json();
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
@@ -1830,6 +1972,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const question = getLatestUserQuestion(prompt, messages);
+    const requestId = crypto.randomUUID();
     const expectsJson = isJsonRequested(question);
     const readOnlyServerContext = isCompanyDetailMode
       ? await buildCompanyDetailServerContext(authState.client, question, clientContext)
@@ -1897,45 +2040,77 @@ Deno.serve(async (req: Request) => {
     let usage: any = null;
     let providerError: string | null = null;
 
-    try {
-      const primaryPayload = await requestAnthropic({
-        anthropicKey,
-        model,
-        systemInstruction,
-        messages: baseMessages
-      });
+    const deterministicAnswer = buildDeterministicAnswer({
+      question,
+      expectsJson,
+      isCompanyDetailMode,
+      serverContext: readOnlyServerContext
+    });
 
-      answer = extractAnthropicText(primaryPayload);
-      finishReason = extractFinishReason(primaryPayload) || null;
-      usage = primaryPayload?.usage ?? null;
-
-      while (String(finishReason || "").toLowerCase() === "max_tokens" && continuationRounds < MAX_CONTINUATION_ROUNDS) {
-        continuationRounds += 1;
-        const continuationPayload = await requestAnthropic({
+    if (deterministicAnswer) {
+      answer = deterministicAnswer;
+      finishReason = "RULE_BASED";
+      usage = null;
+    } else {
+      try {
+        const primaryPayload = await requestAnthropic({
           anthropicKey,
           model,
           systemInstruction,
-          messages: buildContinuationMessages(baseMessages, answer)
+          messages: baseMessages
         });
-        const continuationText = extractAnthropicText(continuationPayload);
-        if (!continuationText) break;
-        answer = `${answer}\n${continuationText}`.trim();
-        finishReason = extractFinishReason(continuationPayload) || finishReason;
+
+        answer = extractAnthropicText(primaryPayload);
+        finishReason = extractFinishReason(primaryPayload) || null;
+        usage = primaryPayload?.usage ?? null;
+
+        while (String(finishReason || "").toLowerCase() === "max_tokens" && continuationRounds < MAX_CONTINUATION_ROUNDS) {
+          continuationRounds += 1;
+          const continuationPayload = await requestAnthropic({
+            anthropicKey,
+            model,
+            systemInstruction,
+            messages: buildContinuationMessages(baseMessages, answer)
+          });
+          const continuationText = extractAnthropicText(continuationPayload);
+          if (!continuationText) break;
+          answer = `${answer}\n${continuationText}`.trim();
+          finishReason = extractFinishReason(continuationPayload) || finishReason;
+        }
+      } catch (error) {
+        providerError = String((error as Error)?.message || "provider request failed");
+        finishReason = "FALLBACK";
+        answer = isCompanyDetailMode
+          ? "Unable to generate a company-specific answer right now. Please try again in 10-30 seconds."
+          : buildFallbackAnswer(question, readOnlyServerContext, providerError);
       }
-    } catch (error) {
-      providerError = String((error as Error)?.message || "provider request failed");
-      finishReason = "FALLBACK";
-      answer = isCompanyDetailMode
-        ? "Unable to generate a company-specific answer right now. Please try again in 10-30 seconds."
-        : buildFallbackAnswer(question, readOnlyServerContext, providerError);
     }
 
     answer = enforceMinimalAnswerStyle(answer || "", { jsonMode: expectsJson });
 
+    const generatedAt = new Date().toISOString();
+    const latencyMs = Math.max(0, Date.now() - requestStartedAt);
+    await writeAiTelemetryEvent(authState.client, {
+      request_id: requestId,
+      request_mode: requestMode,
+      model,
+      strict_server_only: strictServerOnly,
+      question: trimText(question, 1200),
+      domains_requested: toJsonSafe(readOnlyServerContext?.domains_requested || {}, {}),
+      intents_requested: toJsonSafe(readOnlyServerContext?.intents_requested || {}, {}),
+      row_counts: toJsonSafe(readOnlyServerContext?.row_counts || {}, {}),
+      tool_report: toJsonSafe(readOnlyServerContext?.tool_layer || {}, {}),
+      finish_reason: finishReason || null,
+      continuation_rounds: continuationRounds,
+      provider_error: providerError,
+      latency_ms: latencyMs
+    });
+
     return toJson({
+      request_id: requestId,
       answer,
       model,
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
       request_mode: requestMode,
       finish_reason: finishReason || null,
       continuation_rounds: continuationRounds,

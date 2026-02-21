@@ -25,9 +25,13 @@ node qa\ai_accuracy\run-ai-eval.mjs
 
 Checks:
 1. `finance_summary_json`
-2. `company_metric_mapping_json`
-3. `company_status_semantics_json`
-4. `trade_performance_no_insufficient`
+2. `finance_response_has_request_id`
+3. `company_metric_mapping_json`
+4. `company_status_semantics_json`
+5. `company_total_purchase_value_plain_text`
+6. `company_last12_purchase_value_plain_text`
+7. `trade_performance_no_insufficient`
+8. `telemetry_written`
 
 Exit code:
 - `0` when all checks pass

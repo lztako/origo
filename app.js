@@ -193,6 +193,8 @@ const state = {
   productCatalogSavingForm: false,
   productCatalogDetailId: null,
   aiModel: "claude-sonnet-4-20250514",
+  aiConversations: [],
+  aiActiveConversationId: null,
   aiMessages: [],
   aiBootstrapped: false,
   aiHasStartedTyping: false
@@ -4356,6 +4358,22 @@ async function clearAiConversation() {
   autoResizeAiInput();
 }
 
+async function ensureAiConversation() {
+  if (state.aiActiveConversationId) return state.aiActiveConversationId;
+  await refreshAiConversationState(state.aiActiveConversationId);
+  return state.aiActiveConversationId;
+}
+
+async function persistAiMessageSafely(conversationId, role, content, metaJson = {}) {
+  if (!conversationId) return null;
+  try {
+    return await insertAiMessage(conversationId, role, content, metaJson);
+  } catch (error) {
+    console.warn("Unable to persist AI message:", error);
+    return null;
+  }
+}
+
 async function renameAiConversation() {
   if (!state.aiActiveConversationId) return;
   const current = state.aiConversations.find((item) => item.id === state.aiActiveConversationId);
@@ -4403,8 +4421,13 @@ async function bootstrapAiAgent() {
   if (state.aiBootstrapped) return;
 
   hideError(elements.aiAgentError);
-  state.aiMessages = [];
-  renderAiMessages();
+  try {
+    await refreshAiConversationState(state.aiActiveConversationId);
+  } catch (error) {
+    state.aiMessages = [];
+    renderAiMessages();
+    showError(elements.aiAgentError, error?.message || "Unable to load AI conversations.");
+  }
   autoResizeAiInput();
   syncAiInitialState();
   state.aiBootstrapped = true;
@@ -4442,9 +4465,11 @@ async function sendAiChatMessage() {
     state.aiHasStartedTyping = true;
     elements.aiChatInput.value = "";
     autoResizeAiInput();
+    const conversationId = await ensureAiConversation();
     state.aiMessages.push(createAiMessage("user", prompt));
     renderAiMessages();
     scrollAiToBottom("smooth");
+    await persistAiMessageSafely(conversationId, "user", prompt, {});
 
     const pendingMessage = createAiMessage("assistant", "Thinking...", "", true);
     state.aiMessages.push(pendingMessage);
@@ -4467,6 +4492,9 @@ async function sendAiChatMessage() {
     const citationRows = Array.isArray(data?.citations) ? data.citations : [];
     const rowCounts = data?.row_counts && typeof data.row_counts === "object" ? data.row_counts : {};
     const toolReport = data?.tool_report && typeof data.tool_report === "object" ? data.tool_report : null;
+    const requestId = String(data?.request_id || "");
+    const finishReason = String(data?.finish_reason || "");
+    const providerError = String(data?.provider_error || "");
     const metaParts = [];
     if (modelName && generatedAtRaw) {
       metaParts.push(`Model ${modelName} at ${new Date(generatedAtRaw).toLocaleString()}`);
@@ -4478,6 +4506,18 @@ async function sendAiChatMessage() {
     state.aiMessages = state.aiMessages.filter((message) => !message.isPending);
     state.aiMessages.push(createAiMessage("assistant", answer, assistantMetaText));
     renderAiMessages();
+
+    await persistAiMessageSafely(conversationId, "assistant", answer, {
+      model: modelName,
+      generated_at: generatedAtRaw || null,
+      meta_text: assistantMetaText,
+      request_id: requestId || null,
+      finish_reason: finishReason || null,
+      provider_error: providerError || null,
+      row_counts: rowCounts,
+      tool_report: toolReport,
+      citations_count: citationRows.length
+    });
   } catch (error) {
     const rawMessage = String(error?.message || "Unknown error");
     const statusCode = Number(error?.status || 0);

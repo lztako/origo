@@ -33,6 +33,8 @@ Function path: `supabase/functions/ai-agent/index.ts`
 - Supports `mode: "company_detail"` for company-specific answers.
 - `strict_server_only: true` enforces server-side context as source of truth.
 - If user asks for JSON, function now preserves valid JSON output and avoids comma-formatting that breaks numeric JSON fields.
+- Adds deterministic rule-based answers for key prompts (for example finance summary JSON and company purchase-value mapping) before using model generation.
+- Writes one telemetry row per request to `public.ai_telemetry_events` (latency, mode, intents/domains, finish_reason, provider_error).
 - Function performs in-function JWT validation (`auth.getUser()`).
 
 ## Deploy

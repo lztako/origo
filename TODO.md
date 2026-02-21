@@ -8,7 +8,8 @@
 ## P1 Important (ถัดไป)
 - [ ] AI Agent: Streaming response
 - [ ] AI Agent: Guardrails (cross-universe policy + unsafe query blocking + query-shape)
-- [ ] AI Agent: Telemetry / audit trail (intent, tool usage, error, latency)
+- [x] AI Agent: Telemetry / audit trail (intent, tool usage, error, latency)
+- [ ] Investigate Edge gateway `verify_jwt=true` incompatibility (`Invalid JWT`) to remove `--no-verify-jwt`
 - [ ] เพิ่ม FK `companies.status` -> `market_status_definitions.status_code` หลังยืนยันข้อมูล status สะอาด
 - [ ] Cleanup: ลบ `SPEC_AI_AGENT_CHATGPT.md` เมื่อปิดงาน AI ครบ
 
@@ -27,3 +28,4 @@
 - [x] บังคับ `1 user = 1 company` + auto-mapping trigger
 - [x] เพิ่ม data-quality guard script กันข้อมูลเทสค้าง (`supabase/sql/data_quality_guard.sql`)
 - [x] เพิ่มชุดทดสอบความแม่นยำ AI แบบ live (`qa/ai_accuracy/run-ai-eval.mjs`) + เอกสารวิธีรัน
+- [x] เพิ่ม `ai_telemetry_events` + logging จาก `ai-agent` + deterministic answers สำหรับคำถามสำคัญ

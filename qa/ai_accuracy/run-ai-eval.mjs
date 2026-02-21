@@ -88,6 +88,17 @@ function parseFirstJsonObject(text) {
   return null;
 }
 
+function extractNumbers(text) {
+  const source = String(text || "");
+  const matches = source.match(/-?\d{1,3}(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?/g) || [];
+  return matches.map((token) => toNumber(token)).filter((value) => Number.isFinite(value));
+}
+
+function containsApproxValue(text, expected, tolerance = 1) {
+  const numeric = extractNumbers(text);
+  return numeric.some((value) => Math.abs(value - expected) <= tolerance);
+}
+
 async function authSignIn() {
   const url = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
   const response = await fetch(url, {
@@ -241,6 +252,13 @@ async function main() {
       `expected invoices=${expectedTotalInvoices}, usd=${expectedTotalUsd}; got ${JSON.stringify(financeJson)}`
     )
   );
+  results.push(
+    createResult(
+      "finance_response_has_request_id",
+      Boolean(financeAnswer?.request_id),
+      `request_id=${String(financeAnswer?.request_id || "")}`
+    )
+  );
 
   const companyMetricAnswer = await callAiAgent(
     {
@@ -311,6 +329,62 @@ async function main() {
     )
   );
 
+  const companyTotalAnswer = await callAiAgent(
+    {
+      strict_server_only: true,
+      mode: "company_detail",
+      model: "claude-sonnet-4-20250514",
+      messages: [
+        {
+          role: "user",
+          content: "Total Purchase Value บริษัทนี้คือเท่าไหร่ ตอบสั้นๆ"
+        }
+      ],
+      context: {
+        context_scope: { company_id: companyId },
+        company: { company_id: companyId }
+      },
+      requested_at: new Date().toISOString()
+    },
+    accessToken
+  );
+  const companyTotalText = String(companyTotalAnswer.answer || "");
+  results.push(
+    createResult(
+      "company_total_purchase_value_plain_text",
+      containsApproxValue(companyTotalText, expectedTotalPurchaseValue, 1),
+      String(companyTotalText).slice(0, 220)
+    )
+  );
+
+  const companyLast12Answer = await callAiAgent(
+    {
+      strict_server_only: true,
+      mode: "company_detail",
+      model: "claude-sonnet-4-20250514",
+      messages: [
+        {
+          role: "user",
+          content: "ขอมูลค่าซื้อช่วง 12 เดือนล่าสุดของบริษัทนี้"
+        }
+      ],
+      context: {
+        context_scope: { company_id: companyId },
+        company: { company_id: companyId }
+      },
+      requested_at: new Date().toISOString()
+    },
+    accessToken
+  );
+  const companyLast12Text = String(companyLast12Answer.answer || "");
+  results.push(
+    createResult(
+      "company_last12_purchase_value_plain_text",
+      containsApproxValue(companyLast12Text, expectedPurchaseValueLast12m, 1),
+      String(companyLast12Text).slice(0, 220)
+    )
+  );
+
   const tradeAnswer = await callAiAgent(
     {
       strict_server_only: true,
@@ -335,10 +409,31 @@ async function main() {
     )
   );
 
+  const tradeRequestId = String(tradeAnswer?.request_id || "").trim();
+  let telemetryRows = [];
+  if (tradeRequestId) {
+    const telemetryParams = new URLSearchParams();
+    telemetryParams.set("select", "request_id,request_mode,latency_ms,finish_reason,provider_error");
+    telemetryParams.set("request_id", `eq.${tradeRequestId}`);
+    telemetryParams.set("limit", "1");
+    telemetryRows = await restSelect(`ai_telemetry_events?${telemetryParams.toString()}`, accessToken);
+  }
+
+  const telemetry = Array.isArray(telemetryRows) && telemetryRows.length ? telemetryRows[0] : null;
+  const telemetryPass = Boolean(telemetry) && Number(telemetry?.latency_ms ?? -1) >= 0;
+  results.push(
+    createResult(
+      "telemetry_written",
+      telemetryPass,
+      telemetry
+        ? `request_id=${telemetry.request_id}, mode=${telemetry.request_mode}, latency_ms=${telemetry.latency_ms}, finish=${telemetry.finish_reason}`
+        : `request_id=${tradeRequestId || "(missing)"} not found in ai_telemetry_events`
+    )
+  );
+
   printResults(results);
 }
 
 main().catch((error) => {
   fail(error?.message || "Unknown failure");
 });
-
