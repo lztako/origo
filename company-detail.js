@@ -41,6 +41,19 @@ async function requireAuthenticatedSession() {
   }
 }
 
+async function getValidAccessTokenOrRedirect() {
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  const accessToken = sessionData?.session?.access_token || "";
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+  if (!sessionError && accessToken && !userError && userData?.user) {
+    return accessToken;
+  }
+
+  await supabaseClient.auth.signOut().catch(() => {});
+  redirectToLoginPage();
+  throw new Error("Session expired. Please sign in again.");
+}
+
 const TRADE_TABLE_PAGE_SIZE = 10;
 const HISTORY_TREND_MONTHS = 18;
 const COMPANY_AI_MODEL = "claude-sonnet-4-20250514";
@@ -1150,7 +1163,11 @@ async function sendCompanyAiMessage() {
     renderCompanyAiMessages();
 
     const context = buildCompanyAiContext();
+    const accessToken = await getValidAccessTokenOrRedirect();
     const { data, error } = await supabaseClient.functions.invoke("ai-agent", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
       body: {
         mode: "company_detail",
         model: COMPANY_AI_MODEL,
@@ -1180,6 +1197,14 @@ async function sendCompanyAiMessage() {
       friendly = "Unable to reach Edge Function. Ensure function \"ai-agent\" is deployed and reachable.";
     } else if (lowered.includes("404")) {
       friendly = "Edge Function \"ai-agent\" not found. Deploy it before running chat.";
+    } else if (
+      lowered.includes("401") ||
+      lowered.includes("unauthorized") ||
+      lowered.includes("non-2xx")
+    ) {
+      friendly = "Session expired or missing access token. Please sign in again.";
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
     }
 
     detailState.companyAiMessages = detailState.companyAiMessages.filter((message) => !message.isPending);

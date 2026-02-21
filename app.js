@@ -350,6 +350,19 @@ async function handleLogout() {
     window.location.replace("login.html");
   }
 }
+
+async function getValidAccessTokenOrRedirect() {
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  const accessToken = sessionData?.session?.access_token || "";
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+  if (!sessionError && accessToken && !userError && userData?.user) {
+    return accessToken;
+  }
+
+  await supabaseClient.auth.signOut().catch(() => {});
+  redirectToLoginPage();
+  throw new Error("Session expired. Please sign in again.");
+}
 const MARKET_MAP_COLOR_GREEN = "rgba(34, 197, 94, 0.78)";
 const MARKET_MAP_COLOR_YELLOW = "rgba(251, 191, 36, 0.78)";
 const MARKET_MAP_COLOR_ORANGE = "rgba(249, 115, 22, 0.82)";
@@ -4392,7 +4405,11 @@ async function sendAiChatMessage() {
     scrollAiToBottom("smooth");
 
     const context = await buildAiAgentContext();
+    const accessToken = await getValidAccessTokenOrRedirect();
     const { data, error } = await supabaseClient.functions.invoke("ai-agent", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
       body: {
         model: state.aiModel,
         messages: buildAiConversationMessages(),
@@ -4429,6 +4446,14 @@ async function sendAiChatMessage() {
       friendly = "Unable to reach Edge Function. Ensure function \"ai-agent\" is deployed and reachable.";
     } else if (lowered.includes("404")) {
       friendly = "Edge Function \"ai-agent\" not found. Deploy it before running chat.";
+    } else if (
+      lowered.includes("401") ||
+      lowered.includes("unauthorized") ||
+      lowered.includes("non-2xx")
+    ) {
+      friendly = "Session expired or missing access token. Please sign in again.";
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
     }
 
     state.aiMessages = state.aiMessages.filter((message) => !message.isPending);
