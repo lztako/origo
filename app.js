@@ -205,6 +205,8 @@ const state = {
   stockMetrics: null,
   marketTableRows: [],
   marketTablePage: 0,
+  marketProductOptions: [],
+  marketProductOptionsLoaded: false,
   marketSelectedProductKey: "refined-sugar-lin",
   marketProductDropdownOpen: false,
   productCatalogRows: [],
@@ -428,14 +430,13 @@ async function callAiAgentWithAuth(payload) {
 const MARKET_MAP_COLOR_GREEN = "rgba(34, 197, 94, 0.78)";
 const MARKET_MAP_COLOR_YELLOW = "rgba(251, 191, 36, 0.78)";
 const MARKET_MAP_COLOR_ORANGE = "rgba(249, 115, 22, 0.82)";
-const MARKET_PRODUCT_OPTIONS = Object.freeze([
-  Object.freeze({ key: "refined-sugar-lin", label: "Refined Sugar (LIN)" }),
-  Object.freeze({ key: "raw-sugar-trr", label: "Raw Sugar (TRR)" }),
-  Object.freeze({ key: "white-sugar-sada-0001", label: "White Sugar (SADA)" }),
-  Object.freeze({ key: "refined-sugar-sada", label: "Refined Sugar (SADA)" }),
-  Object.freeze({ key: "natural-cane-sugar-sada", label: "Natural Cane Sugar (SADA)" })
+const MARKET_PRODUCT_FALLBACK_OPTIONS = Object.freeze([
+  Object.freeze({ key: "refined-sugar-lin", label: "Refined Sugar (LIN)", matchTokens: ["refined", "sugar"] }),
+  Object.freeze({ key: "raw-sugar-trr", label: "Raw Sugar (TRR)", matchTokens: ["raw", "sugar"] }),
+  Object.freeze({ key: "white-sugar-sada-0001", label: "White Sugar (SADA)", matchTokens: ["white", "sugar"] }),
+  Object.freeze({ key: "refined-sugar-sada", label: "Refined Sugar (SADA)", matchTokens: ["refined", "sugar"] }),
+  Object.freeze({ key: "natural-cane-sugar-sada", label: "Natural Cane Sugar (SADA)", matchTokens: ["natural", "cane", "sugar"] })
 ]);
-const MARKET_PRODUCT_DEFAULT_KEY = "refined-sugar-lin";
 const MARKET_GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson";
 const MARKET_COUNTRY_ALIASES = {
   usa: "USA",
@@ -496,6 +497,11 @@ function applyUrlStateFromQuery() {
   if (financeRangeParam && RANGE_KEYS.has(financeRangeParam)) {
     state.financeChartMonths = financeRangeParam;
   }
+
+  const marketProductParam = String(params.get("mp") || "").trim();
+  if (marketProductParam) {
+    state.marketSelectedProductKey = marketProductParam;
+  }
 }
 
 function syncUrlState() {
@@ -510,6 +516,10 @@ function syncUrlState() {
   }
   if (state.financeChartMonths !== 12) {
     params.set("fr", String(state.financeChartMonths));
+  }
+  const marketProductDefaultKey = getMarketProductDefaultKey();
+  if (state.marketSelectedProductKey && state.marketSelectedProductKey !== marketProductDefaultKey) {
+    params.set("mp", state.marketSelectedProductKey);
   }
   if (state.productCatalogOwnerKey && state.productCatalogOwnerKey !== PRODUCT_CATALOG_OWNER_FALLBACK) {
     params.set("pc_owner", state.productCatalogOwnerKey);
@@ -1031,8 +1041,90 @@ function moveMarketTablePage(step) {
   renderMarketTable();
 }
 
+function normalizeMarketProductKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function stripMarketProductBrandSuffix(label) {
+  return String(label || "")
+    .replace(/\([^)]*\)\s*$/g, "")
+    .trim();
+}
+
+function buildMarketProductMatchTokens(value) {
+  return normalizeSearchText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+}
+
+function createMarketProductOption(rawKey, label, extraTokens = []) {
+  const safeLabel = String(label || "").trim() || "Product";
+  const normalizedKey = normalizeMarketProductKey(rawKey || safeLabel) || `product-${Date.now()}`;
+  const baseTokens = buildMarketProductMatchTokens(stripMarketProductBrandSuffix(safeLabel));
+  const mergedTokens = Array.from(
+    new Set([
+      ...baseTokens,
+      ...extraTokens.flatMap((item) => buildMarketProductMatchTokens(item))
+    ])
+  );
+
+  return {
+    key: normalizedKey,
+    label: safeLabel,
+    matchTokens: mergedTokens
+  };
+}
+
+function buildMarketProductOptionsFromCatalogRows(rows) {
+  const options = [];
+  const seenKeys = new Set();
+
+  (rows || []).forEach((row, index) => {
+    const label = String(row.product_name || row.productName || "").trim();
+    if (!label || label === "-") return;
+
+    const idHint = String(row.product_id || row.id || "").trim();
+    const keySeed = idHint ? `product-${idHint}` : `${label}-${index + 1}`;
+    const option = createMarketProductOption(keySeed, label, [
+      row.hs_code,
+      row.brand,
+      row.description
+    ]);
+    if (!option.matchTokens.length) return;
+    if (seenKeys.has(option.key)) return;
+
+    seenKeys.add(option.key);
+    options.push(option);
+  });
+
+  return options;
+}
+
+function getMarketProductOptions() {
+  if (Array.isArray(state.marketProductOptions) && state.marketProductOptions.length) {
+    return state.marketProductOptions;
+  }
+  return MARKET_PRODUCT_FALLBACK_OPTIONS.map((item) => ({
+    key: String(item.key || ""),
+    label: String(item.label || ""),
+    matchTokens: Array.isArray(item.matchTokens) ? [...item.matchTokens] : []
+  }));
+}
+
+function getMarketProductDefaultKey() {
+  return String(getMarketProductOptions()[0]?.key || "");
+}
+
 function getMarketSelectedProduct() {
-  return MARKET_PRODUCT_OPTIONS.find((item) => item.key === state.marketSelectedProductKey) || MARKET_PRODUCT_OPTIONS[0];
+  const options = getMarketProductOptions();
+  return options.find((item) => item.key === state.marketSelectedProductKey) || options[0] || null;
 }
 
 function getMarketSelectedProductLabel() {
@@ -1041,12 +1133,49 @@ function getMarketSelectedProductLabel() {
 }
 
 function isMarketSelectionLocked() {
-  return state.marketSelectedProductKey !== MARKET_PRODUCT_DEFAULT_KEY;
+  if (ACTIVE_SUPABASE_ENV === "demo") return false;
+  return state.marketSelectedProductKey !== getMarketProductDefaultKey();
 }
 
 function ensureMarketProductSelectionValid() {
-  if (MARKET_PRODUCT_OPTIONS.some((item) => item.key === state.marketSelectedProductKey)) return;
-  state.marketSelectedProductKey = MARKET_PRODUCT_DEFAULT_KEY;
+  const options = getMarketProductOptions();
+  if (options.some((item) => item.key === state.marketSelectedProductKey)) return;
+  state.marketSelectedProductKey = getMarketProductDefaultKey();
+}
+
+function updateMarketProductOptionsFromCatalogRows(rows) {
+  const dynamicOptions = buildMarketProductOptionsFromCatalogRows(rows);
+  if (!dynamicOptions.length) return false;
+
+  const currentKey = String(state.marketSelectedProductKey || "").trim();
+  state.marketProductOptions = dynamicOptions;
+  state.marketProductOptionsLoaded = true;
+
+  if (dynamicOptions.some((item) => item.key === currentKey)) {
+    state.marketSelectedProductKey = currentKey;
+  } else {
+    state.marketSelectedProductKey = getMarketProductDefaultKey();
+  }
+  return true;
+}
+
+async function ensureMarketProductOptionsLoaded() {
+  if (state.marketProductOptionsLoaded) return;
+  state.marketProductOptionsLoaded = true;
+
+  if (ACTIVE_SUPABASE_ENV !== "demo") {
+    ensureMarketProductSelectionValid();
+    return;
+  }
+
+  try {
+    const rows = await loadProductCatalogRows();
+    updateMarketProductOptionsFromCatalogRows(rows);
+  } catch (error) {
+    console.warn("Unable to load market product options from product catalog:", error);
+  }
+
+  ensureMarketProductSelectionValid();
 }
 
 function syncMarketProductDropdownUi() {
@@ -1077,8 +1206,9 @@ function toggleMarketProductDropdown() {
 function renderMarketProductSelector() {
   if (!elements.marketProductTrigger || !elements.marketProductMenu) return;
   ensureMarketProductSelectionValid();
+  const options = getMarketProductOptions();
   elements.marketProductTrigger.textContent = getMarketSelectedProductLabel();
-  elements.marketProductMenu.innerHTML = MARKET_PRODUCT_OPTIONS
+  elements.marketProductMenu.innerHTML = options
     .map((item) => {
       const isActive = item.key === state.marketSelectedProductKey;
       return `
@@ -1099,8 +1229,9 @@ function renderMarketProductSelector() {
 
 async function applyMarketProductSelection(nextKey) {
   const normalized = String(nextKey || "").trim();
-  if (!MARKET_PRODUCT_OPTIONS.some((item) => item.key === normalized)) {
-    state.marketSelectedProductKey = MARKET_PRODUCT_DEFAULT_KEY;
+  const options = getMarketProductOptions();
+  if (!options.some((item) => item.key === normalized)) {
+    state.marketSelectedProductKey = getMarketProductDefaultKey();
   } else {
     state.marketSelectedProductKey = normalized;
   }
@@ -2722,6 +2853,11 @@ async function runProductCatalogQuery() {
 
   try {
     const rows = await loadProductCatalogRows();
+    if (ACTIVE_SUPABASE_ENV === "demo") {
+      updateMarketProductOptionsFromCatalogRows(rows);
+      renderMarketProductSelector();
+      applyMarketProductLockState();
+    }
     setProductCatalogRows(rows);
     applyProductCatalogFilter();
     renderProductCatalogGallery();
@@ -3666,6 +3802,7 @@ async function renderMarketMap(metric) {
 }
 
 async function runMarketMapQuery() {
+  await ensureMarketProductOptionsLoaded();
   renderMarketProductSelector();
   applyMarketProductLockState();
   if (isMarketSelectionLocked()) {
