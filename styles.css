@@ -820,11 +820,15 @@ tr:hover td {
 }
 
 .market-status-green {
-  background: #fbbf24;
+  background: #22c55e;
 }
 
 .market-status-yellow {
   background: #fbbf24;
+}
+
+.market-status-mixed {
+  background: #f97316;
 }
 
 .market-status-fixed {

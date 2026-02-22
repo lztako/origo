@@ -257,11 +257,15 @@
 }
 
 [data-theme="mono"] .market-status-green {
-  background: #fbbf24;
+  background: #22c55e;
 }
 
 [data-theme="mono"] .market-status-yellow {
   background: #fbbf24;
+}
+
+[data-theme="mono"] .market-status-mixed {
+  background: #f97316;
 }
 
 [data-theme="mono"] .market-status-fixed {

@@ -243,7 +243,7 @@ const PRODUCT_CATALOG_QUERY_LIMIT = 2000;
 const PRODUCT_CATALOG_SOURCE = "sugar_products";
 const PRODUCT_CATALOG_LOCAL_DRAFT_MODE = false;
 const PRODUCT_CATALOG_READ_ONLY = PRODUCT_CATALOG_LOCAL_DRAFT_MODE || PRODUCT_CATALOG_SOURCE === "sugar_products";
-const PRODUCT_CATALOG_ONLY_PDF_SET = true;
+const PRODUCT_CATALOG_ONLY_PDF_SET = ACTIVE_SUPABASE_ENV !== "demo";
 const PRODUCT_CATALOG_PDF_SELECTION = Object.freeze([
   Object.freeze({ productNameEn: "Raw Sugar", productNameTh: "น้ำตาลทรายดิบ", brand: "TRR" }),
   Object.freeze({ productNameEn: "Refined Sugar", productNameTh: "น้ำตาลทรายขาวบริสุทธิ์", brand: "LIN" }),
@@ -876,21 +876,67 @@ function normalizeMarketStatus(value) {
   return "yellow";
 }
 
+function normalizeMarketCountryStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "green" || normalized === "yellow" || normalized === "mixed") return normalized;
+  return "";
+}
+
+function summarizeMarketStatusFlags(flags) {
+  const hasGreen = Boolean(flags?.hasGreen);
+  const hasYellow = Boolean(flags?.hasYellow);
+  if (hasGreen && hasYellow) return "mixed";
+  if (hasGreen) return "green";
+  return "yellow";
+}
+
+function getMarketStatusClass(status) {
+  const normalized = normalizeMarketCountryStatus(status);
+  if (normalized === "green") return "market-status-green";
+  if (normalized === "mixed") return "market-status-mixed";
+  return "market-status-yellow";
+}
+
 function setMarketTableRows(rows) {
   const checkedById = new Map(state.marketTableRows.map((row) => [row.id, Boolean(row.checked)]));
-  state.marketTableRows = (rows || []).map((row, index) => {
+  const normalizedRows = (rows || []).map((row, index) => {
     const id = String(row.id || `company-${index}`);
+    const country = String(row.country || "-");
+    const fallbackGroupKey = `loc:${normalizeCountryText(country) || "unknown"}`;
+    const groupKey = String(row.countryGroupKey || fallbackGroupKey);
     return {
       id,
       checked: checkedById.get(id) ?? Boolean(row.checked),
       status: normalizeMarketStatus(row.status),
+      countryStatus: normalizeMarketCountryStatus(row.countryStatus),
       customer: String(row.customer || "-"),
-      country: String(row.country || "-"),
+      country,
+      countryGroupKey: groupKey,
       productDescription: String(row.productDescription || "-"),
       trades: Number(row.trades || 0),
       order: index
     };
   });
+
+  const statusByGroupKey = new Map();
+  normalizedRows.forEach((row) => {
+    if (!statusByGroupKey.has(row.countryGroupKey)) {
+      statusByGroupKey.set(row.countryGroupKey, { hasGreen: false, hasYellow: false });
+    }
+    const bucket = statusByGroupKey.get(row.countryGroupKey);
+    if (row.status === "green") {
+      bucket.hasGreen = true;
+    } else {
+      bucket.hasYellow = true;
+    }
+  });
+
+  state.marketTableRows = normalizedRows.map((row) => ({
+    ...row,
+    countryStatus:
+      normalizeMarketCountryStatus(row.countryStatus) ||
+      summarizeMarketStatusFlags(statusByGroupKey.get(row.countryGroupKey))
+  }));
   state.marketTablePage = 0;
 }
 
@@ -939,7 +985,8 @@ function renderMarketTable() {
 
   elements.marketTableBody.innerHTML = pageRows
     .map((row) => {
-      const statusClass = row.status === "green" ? "market-status-green" : "market-status-yellow";
+      const countryStatus = normalizeMarketCountryStatus(row.countryStatus) || normalizeMarketStatus(row.status);
+      const statusClass = getMarketStatusClass(countryStatus);
       const customerText = String(row.customer || "-");
       const productText = String(row.productDescription || "-");
       const customerShort = truncateText(customerText, 15);
@@ -956,7 +1003,7 @@ function renderMarketTable() {
             />
           </td>
           <td>
-            <span class="market-status-dot market-status-fixed ${statusClass}" aria-label="${escapeHtml(row.status)} status"></span>
+            <span class="market-status-dot market-status-fixed ${statusClass}" aria-label="${escapeHtml(countryStatus)} country status"></span>
           </td>
           <td><span class="truncate-cell truncate-cell-customer" title="${escapeHtml(customerText)}">${escapeHtml(customerShort)}</span></td>
           <td>${escapeHtml(row.country)}</td>
@@ -2157,7 +2204,11 @@ function normalizeCatalogMatchText(value) {
 }
 
 function normalizeCatalogBrand(value) {
-  return normalizeCatalogMatchText(value).replace(/\bgroup\b/g, "").trim();
+  return normalizeCatalogMatchText(value)
+    .replace(/\bgroup\b/g, "")
+    .replace(/\bdemo\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeCatalogRef(value) {
@@ -2628,8 +2679,12 @@ async function loadProductCatalogRows() {
       .limit(PRODUCT_CATALOG_QUERY_LIMIT);
 
     if (error) throw error;
-    const selectedRows = (data || []).filter((row) => isSugarProductInPdfSelection(row));
-    return selectedRows.map((row) => ({
+    const rawRows = data || [];
+    const selectedRows = PRODUCT_CATALOG_ONLY_PDF_SET
+      ? rawRows.filter((row) => isSugarProductInPdfSelection(row))
+      : rawRows;
+    const rowsForView = selectedRows.length ? selectedRows : rawRows;
+    return rowsForView.map((row) => ({
       product_id: String(row.id || ""),
       owner_key: state.productCatalogOwnerKey,
       product_name: buildSugarProductName(row),
@@ -3356,10 +3411,14 @@ async function loadMarketMetric() {
     customer: String(row.customer || "-"),
     country: String(row.location || "-"),
     productDescription: String(row.product_description || "-"),
-    trades: Number(row.trades || 0)
+    trades: Number(row.trades || 0),
+    countryIso3: "",
+    countryGroupKey: "",
+    countryStatus: ""
   }));
 
   const byCode = new Map();
+  const statusByGroupKey = new Map();
   const locationLabelByKey = new Map();
   const allLocationKeys = new Set();
   const mappedLocationKeys = new Set();
@@ -3369,6 +3428,7 @@ async function loadMarketMetric() {
     const locationRaw = String(row.country || "").trim();
     const locationLabel = locationRaw && locationRaw !== "-" ? locationRaw : "Unknown / Empty";
     const locationKey = normalizeCountryText(locationLabel) || "unknown";
+    const fallbackGroupKey = `loc:${locationKey}`;
     locationLabelByKey.set(locationKey, locationLabel);
     allLocationKeys.add(locationKey);
 
@@ -3379,6 +3439,19 @@ async function loadMarketMetric() {
       },
       countryLookup
     );
+
+    row.countryIso3 = iso3 || "";
+    row.countryGroupKey = iso3 ? `iso:${iso3}` : fallbackGroupKey;
+    if (!statusByGroupKey.has(row.countryGroupKey)) {
+      statusByGroupKey.set(row.countryGroupKey, { hasGreen: false, hasYellow: false });
+    }
+    const rowGroupStatus = statusByGroupKey.get(row.countryGroupKey);
+    if (row.status === "green") {
+      rowGroupStatus.hasGreen = true;
+    } else {
+      rowGroupStatus.hasYellow = true;
+    }
+
     if (!iso3) {
       unmappedByLocationKey.set(locationKey, (unmappedByLocationKey.get(locationKey) || 0) + 1);
       return;
@@ -3404,6 +3477,10 @@ async function loadMarketMetric() {
     }
     bucket.companyCount += 1;
     bucket.totalTrades += Number(row.trades || 0);
+  });
+
+  tableRows.forEach((row) => {
+    row.countryStatus = summarizeMarketStatusFlags(statusByGroupKey.get(row.countryGroupKey));
   });
 
   const unmappedLocations = [...unmappedByLocationKey.entries()]
