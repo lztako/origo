@@ -908,6 +908,13 @@ function getMarketStatusClass(status) {
   return "market-status-yellow";
 }
 
+function getMarketStatusColor(status) {
+  const normalized = normalizeMarketCountryStatus(status);
+  if (normalized === "green") return "#22c55e";
+  if (normalized === "mixed") return "#f97316";
+  return "#fbbf24";
+}
+
 function setMarketTableRows(rows) {
   const checkedById = new Map(state.marketTableRows.map((row) => [row.id, Boolean(row.checked)]));
   const normalizedRows = (rows || []).map((row, index) => {
@@ -998,6 +1005,7 @@ function renderMarketTable() {
     .map((row) => {
       const countryStatus = normalizeMarketCountryStatus(row.countryStatus) || normalizeMarketStatus(row.status);
       const statusClass = getMarketStatusClass(countryStatus);
+      const statusColor = getMarketStatusColor(countryStatus);
       const customerText = String(row.customer || "-");
       const productText = String(row.productDescription || "-");
       const customerShort = truncateText(customerText, 15);
@@ -1014,7 +1022,7 @@ function renderMarketTable() {
             />
           </td>
           <td>
-            <span class="market-status-dot market-status-fixed ${statusClass}" aria-label="${escapeHtml(countryStatus)} country status"></span>
+            <span class="market-status-dot market-status-fixed ${statusClass}" style="background:${escapeHtml(statusColor)};" aria-label="${escapeHtml(countryStatus)} country status"></span>
           </td>
           <td><span class="truncate-cell truncate-cell-customer" title="${escapeHtml(customerText)}">${escapeHtml(customerShort)}</span></td>
           <td>${escapeHtml(row.country)}</td>
@@ -1133,8 +1141,7 @@ function getMarketSelectedProductLabel() {
 }
 
 function isMarketSelectionLocked() {
-  if (ACTIVE_SUPABASE_ENV === "demo") return false;
-  return state.marketSelectedProductKey !== getMarketProductDefaultKey();
+  return false;
 }
 
 function ensureMarketProductSelectionValid() {
