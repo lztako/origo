@@ -10,7 +10,7 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
       appendEnvToPath: (path) => String(path || "")
     };
 
-const APP_RUNTIME_VERSION = "20260222-market-unlock-v6";
+const APP_RUNTIME_VERSION = "20260222-market-lock-brown-v7";
 console.info(`[app] runtime=${APP_RUNTIME_VERSION}`);
 
 if (!runtimeConfig.ready) {
@@ -1130,7 +1130,17 @@ function getMarketProductOptions() {
 }
 
 function getMarketProductDefaultKey() {
-  return String(getMarketProductOptions()[0]?.key || "");
+  const options = getMarketProductOptions();
+  if (ACTIVE_SUPABASE_ENV === "demo") {
+    const exactBrown = options.find(
+      (item) => normalizeSearchText(item.label) === "brown sugar (demo sada)"
+    );
+    if (exactBrown?.key) return String(exactBrown.key);
+
+    const brownFallback = options.find((item) => normalizeSearchText(item.label).startsWith("brown sugar"));
+    if (brownFallback?.key) return String(brownFallback.key);
+  }
+  return String(options[0]?.key || "");
 }
 
 function getMarketSelectedProduct() {
@@ -1144,7 +1154,7 @@ function getMarketSelectedProductLabel() {
 }
 
 function isMarketSelectionLocked() {
-  return false;
+  return state.marketSelectedProductKey !== getMarketProductDefaultKey();
 }
 
 function ensureMarketProductSelectionValid() {
