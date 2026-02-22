@@ -10,6 +10,9 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
       appendEnvToPath: (path) => String(path || "")
     };
 
+const APP_RUNTIME_VERSION = "20260222-market-unlock-v6";
+console.info(`[app] runtime=${APP_RUNTIME_VERSION}`);
+
 if (!runtimeConfig.ready) {
   throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
 }
