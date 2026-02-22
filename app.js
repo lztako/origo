@@ -232,6 +232,7 @@ let financeTrendChartInstance = null;
 let stockFactoryTrendChartInstance = null;
 let marketMapInstance = null;
 let marketGeoLayer = null;
+let marketCountryMarkerLayer = null;
 let marketGeoJsonCache = null;
 let marketCountryLookupCache = null;
 const VIEW_KEYS = new Set(["dashboard", "overview", "stock", "market-map", "product-catalog", "finance", "ai-agent"]);
@@ -3359,6 +3360,20 @@ function getMarketCountryFillColor(summary) {
   return "rgba(0, 0, 0, 0)";
 }
 
+function getMarketLayerCenter(layer) {
+  if (!layer) return null;
+  if (typeof layer.getBounds === "function") {
+    const bounds = layer.getBounds();
+    if (bounds && typeof bounds.isValid === "function" && bounds.isValid()) {
+      return bounds.getCenter();
+    }
+  }
+  if (typeof layer.getLatLng === "function") {
+    return layer.getLatLng();
+  }
+  return null;
+}
+
 async function loadMarketMetric() {
   const geojson = await loadWorldCountriesGeoJson();
   const countryLookup = buildMarketCountryLookup(geojson);
@@ -3511,6 +3526,11 @@ async function renderMarketMap(metric) {
   const geojson = await loadWorldCountriesGeoJson();
   const features = Array.isArray(geojson?.features) ? geojson.features : [];
 
+  if (marketCountryMarkerLayer) {
+    marketCountryMarkerLayer.remove();
+    marketCountryMarkerLayer = null;
+  }
+
   if (marketGeoLayer) {
     marketGeoLayer.remove();
     marketGeoLayer = null;
@@ -3568,6 +3588,44 @@ async function renderMarketMap(metric) {
     style: baseStyle,
     onEachFeature: bindInteractions
   }).addTo(marketMapInstance);
+
+  // Country markers keep tiny countries (for example Singapore) clearly visible at locked zoom.
+  const markerLayers = [];
+  marketGeoLayer.eachLayer((layer) => {
+    const feature = layer?.feature;
+    const summary = getMarketCountrySummary(feature, metric);
+    if (!summary) return;
+
+    const center = getMarketLayerCenter(layer);
+    if (!center) return;
+
+    const countryCode = mapCountryCode(feature);
+    const countryName = mapCountryName(feature);
+    const marker = window.L.circleMarker(center, {
+      radius: 5,
+      weight: 1.35,
+      color: "rgba(255, 243, 214, 0.96)",
+      opacity: 1,
+      fillColor: getMarketCountryFillColor(summary),
+      fillOpacity: 0.96
+    });
+
+    marker.bindTooltip(marketTooltipHtml(countryName, summary), {
+      sticky: true,
+      className: "dark-tooltip",
+      direction: "top"
+    });
+    marker.on({
+      mouseover: () => marker.openTooltip(),
+      mouseout: () => marker.closeTooltip(),
+      click: () => MapsToCountry(countryCode)
+    });
+    markerLayers.push(marker);
+  });
+
+  if (markerLayers.length) {
+    marketCountryMarkerLayer = window.L.layerGroup(markerLayers).addTo(marketMapInstance);
+  }
 
   // Fit map to countries that appear in the Market table and then lock view.
   marketMapInstance.setMinZoom(1);
