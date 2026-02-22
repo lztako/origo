@@ -1946,10 +1946,7 @@ Deno.serve(async (req: Request) => {
   try {
     const requestStartedAt = Date.now();
     const body = await req.json();
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicKey) {
-      return toJson({ error: "ANTHROPIC_API_KEY is not configured" }, 500);
-    }
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
 
     const defaultModel = Deno.env.get("CLAUDE_MODEL") || "claude-sonnet-4-20250514";
     const model = String(body?.model || defaultModel).trim() || defaultModel;
@@ -2053,29 +2050,37 @@ Deno.serve(async (req: Request) => {
       usage = null;
     } else {
       try {
-        const primaryPayload = await requestAnthropic({
-          anthropicKey,
-          model,
-          systemInstruction,
-          messages: baseMessages
-        });
-
-        answer = extractAnthropicText(primaryPayload);
-        finishReason = extractFinishReason(primaryPayload) || null;
-        usage = primaryPayload?.usage ?? null;
-
-        while (String(finishReason || "").toLowerCase() === "max_tokens" && continuationRounds < MAX_CONTINUATION_ROUNDS) {
-          continuationRounds += 1;
-          const continuationPayload = await requestAnthropic({
+        if (!anthropicKey) {
+          providerError = "ANTHROPIC_API_KEY is not configured";
+          finishReason = "FALLBACK";
+          answer = isCompanyDetailMode
+            ? "Unable to generate a company-specific answer right now. Please try again in 10-30 seconds."
+            : buildFallbackAnswer(question, readOnlyServerContext, providerError);
+        } else {
+          const primaryPayload = await requestAnthropic({
             anthropicKey,
             model,
             systemInstruction,
-            messages: buildContinuationMessages(baseMessages, answer)
+            messages: baseMessages
           });
-          const continuationText = extractAnthropicText(continuationPayload);
-          if (!continuationText) break;
-          answer = `${answer}\n${continuationText}`.trim();
-          finishReason = extractFinishReason(continuationPayload) || finishReason;
+
+          answer = extractAnthropicText(primaryPayload);
+          finishReason = extractFinishReason(primaryPayload) || null;
+          usage = primaryPayload?.usage ?? null;
+
+          while (String(finishReason || "").toLowerCase() === "max_tokens" && continuationRounds < MAX_CONTINUATION_ROUNDS) {
+            continuationRounds += 1;
+            const continuationPayload = await requestAnthropic({
+              anthropicKey,
+              model,
+              systemInstruction,
+              messages: buildContinuationMessages(baseMessages, answer)
+            });
+            const continuationText = extractAnthropicText(continuationPayload);
+            if (!continuationText) break;
+            answer = `${answer}\n${continuationText}`.trim();
+            finishReason = extractFinishReason(continuationPayload) || finishReason;
+          }
         }
       } catch (error) {
         providerError = String((error as Error)?.message || "provider request failed");

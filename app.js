@@ -1,9 +1,34 @@
-const SUPABASE_URL = "https://adybfyqyoyinmpsftrde.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe";
+const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
+  ? window.getSupabaseRuntimeConfig()
+  : {
+      envKey: "prod",
+      label: "PROD",
+      url: "https://adybfyqyoyinmpsftrde.supabase.co",
+      publishableKey: "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe",
+      ready: true,
+      errorMessage: "",
+      appendEnvToPath: (path) => String(path || "")
+    };
+
+if (!runtimeConfig.ready) {
+  throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
+}
+
+const SUPABASE_URL = runtimeConfig.url;
+const SUPABASE_PUBLISHABLE_KEY = runtimeConfig.publishableKey;
+const ACTIVE_SUPABASE_ENV = String(runtimeConfig.envKey || "prod");
+const ENV_BADGE_SUFFIX = ACTIVE_SUPABASE_ENV === "demo" ? " · DEMO" : "";
+const appendEnvToPath = typeof runtimeConfig.appendEnvToPath === "function"
+  ? runtimeConfig.appendEnvToPath
+  : (path) => String(path || "");
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 if (window.Chart && window.ChartDataLabels) {
   window.Chart.register(window.ChartDataLabels);
+}
+
+if (ACTIVE_SUPABASE_ENV === "demo" && typeof document?.title === "string" && !document.title.includes("[DEMO]")) {
+  document.title = `${document.title} [DEMO]`;
 }
 
 const elements = {
@@ -315,7 +340,7 @@ function buildLoginUrlWithNext() {
     ? "index.html"
     : (pathName.split("/").pop() || "index.html");
   const nextPath = `${fileName}${window.location.search || ""}`;
-  return `login.html?next=${encodeURIComponent(nextPath)}`;
+  return appendEnvToPath(`login.html?next=${encodeURIComponent(nextPath)}`);
 }
 
 function redirectToLoginPage() {
@@ -349,7 +374,7 @@ async function handleLogout() {
   try {
     await supabaseClient.auth.signOut();
   } finally {
-    window.location.replace("login.html");
+    window.location.replace(appendEnvToPath("login.html"));
   }
 }
 
@@ -475,6 +500,9 @@ function applyUrlStateFromQuery() {
 function syncUrlState() {
   const params = new URLSearchParams();
 
+  if (ACTIVE_SUPABASE_ENV === "demo") {
+    params.set("env", "demo");
+  }
   params.set("view", state.view);
   if (state.deliveryChartMonths !== 12) {
     params.set("dr", String(state.deliveryChartMonths));
@@ -1110,25 +1138,25 @@ function setActiveView(view) {
   }
 
   if (isDashboard) {
-    elements.pageEyebrow.textContent = "OPERATION";
+    elements.pageEyebrow.textContent = `OPERATION${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "EXECUTION DASHBOARD";
   } else if (isOverview) {
-    elements.pageEyebrow.textContent = "OVERVIEW";
+    elements.pageEyebrow.textContent = `OVERVIEW${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "INTERNAL PERFORMANCE";
   } else if (isStock) {
-    elements.pageEyebrow.textContent = "STOCK";
+    elements.pageEyebrow.textContent = `STOCK${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "INVENTORY OVERVIEW";
   } else if (isMarketMap) {
-    elements.pageEyebrow.textContent = "MARKET";
+    elements.pageEyebrow.textContent = `MARKET${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "GLOBAL TRADE MAP";
   } else if (isProductCatalog) {
-    elements.pageEyebrow.textContent = "MARKET";
+    elements.pageEyebrow.textContent = `MARKET${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "PRODUCT CATALOG";
   } else if (isFinance) {
-    elements.pageEyebrow.textContent = "FINANCE";
+    elements.pageEyebrow.textContent = `FINANCE${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "INVOICE ANALYTICS";
   } else {
-    elements.pageEyebrow.textContent = "AI AGENT";
+    elements.pageEyebrow.textContent = `AI AGENT${ENV_BADGE_SUFFIX}`;
     elements.pageTitle.textContent = "SUPABASE AI ANALYSIS";
   }
 
@@ -4696,7 +4724,7 @@ if (elements.marketTableBody) {
     const companyId = String(row.getAttribute("data-company-id") || "");
     if (!companyId) return;
 
-    window.location.href = `company-detail.html?company_id=${encodeURIComponent(companyId)}`;
+    window.location.href = appendEnvToPath(`company-detail.html?company_id=${encodeURIComponent(companyId)}`);
   });
 }
 
@@ -4710,7 +4738,7 @@ if (elements.overdueOnlyBody) {
     const contractId = String(row.getAttribute("data-contract-id") || "");
     if (!contractId) return;
 
-    window.location.href = `delivery-detail.html?contract_id=${encodeURIComponent(contractId)}`;
+    window.location.href = appendEnvToPath(`delivery-detail.html?contract_id=${encodeURIComponent(contractId)}`);
   });
 }
 
@@ -4724,7 +4752,7 @@ if (elements.overviewOverdueBody) {
     const contractId = String(row.getAttribute("data-contract-id") || "");
     if (!contractId) return;
 
-    window.location.href = `delivery-detail.html?contract_id=${encodeURIComponent(contractId)}`;
+    window.location.href = appendEnvToPath(`delivery-detail.html?contract_id=${encodeURIComponent(contractId)}`);
   });
 }
 

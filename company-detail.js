@@ -1,9 +1,33 @@
-const SUPABASE_URL = "https://adybfyqyoyinmpsftrde.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe";
+const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
+  ? window.getSupabaseRuntimeConfig()
+  : {
+      envKey: "prod",
+      label: "PROD",
+      url: "https://adybfyqyoyinmpsftrde.supabase.co",
+      publishableKey: "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe",
+      ready: true,
+      errorMessage: "",
+      appendEnvToPath: (path) => String(path || "")
+    };
+
+if (!runtimeConfig.ready) {
+  throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
+}
+
+const SUPABASE_URL = runtimeConfig.url;
+const SUPABASE_PUBLISHABLE_KEY = runtimeConfig.publishableKey;
+const ACTIVE_SUPABASE_ENV = String(runtimeConfig.envKey || "prod");
+const appendEnvToPath = typeof runtimeConfig.appendEnvToPath === "function"
+  ? runtimeConfig.appendEnvToPath
+  : (path) => String(path || "");
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 if (window.Chart && window.ChartDataLabels) {
   window.Chart.register(window.ChartDataLabels);
+}
+
+if (ACTIVE_SUPABASE_ENV === "demo" && typeof document?.title === "string" && !document.title.includes("[DEMO]")) {
+  document.title = `${document.title} [DEMO]`;
 }
 
 function buildLoginUrlWithNext() {
@@ -12,7 +36,7 @@ function buildLoginUrlWithNext() {
     ? "index.html"
     : (pathName.split("/").pop() || "index.html");
   const nextPath = `${fileName}${window.location.search || ""}`;
-  return `login.html?next=${encodeURIComponent(nextPath)}`;
+  return appendEnvToPath(`login.html?next=${encodeURIComponent(nextPath)}`);
 }
 
 function redirectToLoginPage() {
