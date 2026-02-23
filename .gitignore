@@ -1,5 +1,6 @@
 # Supabase CLI local temp/cache files
 supabase/.temp/
+.vercel/
 
 # Local ETL payloads/reports/secrets
 etl/input/*.json
@@ -8,3 +9,8 @@ etl/input/*.ndjson
 etl/input/*.csv
 etl/logs/
 etl/.env
+
+# Python cache artifacts
+**/__pycache__/
+*.pyc
+*.pyo
