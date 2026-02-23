@@ -13,6 +13,8 @@
 - [ ] AI Agent: Streaming response
 - [ ] AI Agent: Guardrails (cross-universe policy + unsafe query blocking + query-shape)
 - [x] AI Agent: Telemetry / audit trail (intent, tool usage, error, latency)
+- [ ] Billing/Usage: ทำ quota ต่อ `company_entities` (เช่น requests/tokens ต่อรอบบิล) และบล็อก `ai-agent` เมื่อเกิน limit
+- [ ] Billing/Usage: เพิ่มแท็บ `Usage` แสดง `Used / Limit / Remaining / Reset date` ต่อบริษัท
 - [ ] Investigate Edge gateway `verify_jwt=true` incompatibility (`Invalid JWT`) to remove `--no-verify-jwt`
 - [ ] เพิ่ม FK `companies.status` -> `market_status_definitions.status_code` หลังยืนยันข้อมูล status สะอาด
 - [ ] Cleanup: ลบ `SPEC_AI_AGENT_CHATGPT.md` เมื่อปิดงาน AI ครบ
@@ -24,6 +26,17 @@
 - [ ] Batch C: เพิ่ม persistence UAT สำหรับ `ai_conversations/ai_messages` (create, reload, delete, RLS isolation)
 - [ ] Batch C: เขียน runbook incident AI (`provider down`, `edge error`, `jwt fail`, `rls deny`) พร้อมวิธี rollback
 
+## AI Analysis Backlog (2026-02-23)
+- [ ] ลด payload จาก frontend -> `ai-agent` เมื่อใช้ `strict_server_only=true` (ส่งเฉพาะ metadata ที่จำเป็น)
+- [ ] ลด over-fetch (`limit(5000)`) โดยย้าย metric/summary เป็น SQL view หรือ RPC aggregate
+- [ ] เพิ่ม timeout/retry ที่ฝั่ง web (`app.js`, `company-detail.js`) และฝั่ง edge provider call (`ai-agent`)
+- [ ] แยก `app.js` (monolith) เป็นโมดูลย่อยตามโดเมน: market / operation / finance / ai / product
+- [ ] รวม utility ซ้ำข้ามหน้า (`auth`, `ai fetch`, `format/date`) เป็น shared utilities
+- [ ] เพิ่ม pagination/lazy-load สำหรับ `ai_conversations` และ `ai_messages`
+- [ ] ทำ CORS allowlist สำหรับ production origin (แทน `*`) และทบทวนจุด `innerHTML`
+- [ ] ขยาย AI eval จาก 8 -> 25 เคส และผูกเป็น quality gate ก่อน deploy
+- [ ] ตั้ง telemetry baseline + alert: fallback rate, error rate, p95 latency
+
 ## Architecture Notes (จดไว้ก่อน)
 - [ ] เพิ่มตาราง `customers` (internal customer object แยกจาก external market companies)
 - [ ] เพิ่มตาราง `customer_external_company_map` (many-to-many + confidence/verification)
@@ -34,6 +47,9 @@
 - [ ] พิจารณาอัปเกรดแผน provider AI เมื่อเจอ quota/rate limit จริง
 
 ## Completed Recently
+- [x] Benchmark หลัง optimize: DB-level initial query bundle ของ `company-detail` ลดลง ~33.27% (200 runs, เทียบ old preload trade vs new overview-only init)
+- [x] เพิ่ม migration ดัชนีสำหรับ company detail/trade query (`20260223024617_optimize_company_detail_query_indexes.sql`)
+- [x] Company detail performance: ย้ายการโหลด `company_history`/`company_supplychain` เป็น on-demand ตอนเปิดแท็บ `trade` (เอา eager preload ตอนเข้า page ออก)
 - [x] Security hardening batches 1-3 (RLS, grants, ai-agent JWT, sandbox cleanup)
 - [x] Access UAT ฝั่ง SQL/RLS + report (`UAT_ACCESS_REPORT_2026-02-21.md`)
 - [x] บังคับ `1 user = 1 company` + auto-mapping trigger

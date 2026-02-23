@@ -1880,9 +1880,6 @@ async function loadCompanyDetail() {
     renderTradeLoadingState();
   }
 
-  window.setTimeout(() => {
-    void ensureTradeDataLoaded();
-  }, 0);
 }
 
 bindTabEvents();
