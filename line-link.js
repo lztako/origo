@@ -12,14 +12,11 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
 const elements = {
   lead: document.getElementById("lineLinkLead"),
   status: document.getElementById("lineLinkStatus"),
-  detail: document.getElementById("lineLinkDetail"),
-  returnLineBtn: document.getElementById("lineLinkReturnLineBtn")
+  detail: document.getElementById("lineLinkDetail")
 };
 
 const LINE_AUTH_QUERY_KEY = "line_auth";
 const FORCE_LOGIN_QUERY_KEY = "force_login";
-const LINE_APP_FALLBACK_URL = "https://line.me/R/";
-const LINE_APP_REDIRECT_DELAY_MS = 120;
 
 if (!runtimeConfig.ready) {
   throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
@@ -85,50 +82,6 @@ function buildLoginUrlWithNext() {
 
 function redirectToLoginPage() {
   window.location.replace(buildLoginUrlWithNext());
-}
-
-function setReturnButtonEnabled(enabled) {
-  if (!elements.returnLineBtn) return;
-  elements.returnLineBtn.disabled = !enabled;
-}
-
-function tryCloseInAppWindow() {
-  try {
-    const liffAny = window.liff;
-    if (liffAny && typeof liffAny.closeWindow === "function") {
-      liffAny.closeWindow();
-      return true;
-    }
-  } catch (_error) {
-    // Ignore LIFF close errors and continue fallback behavior.
-  }
-
-  try {
-    window.close();
-  } catch (_error) {
-    // Ignore window close errors.
-  }
-
-  try {
-    window.history.back();
-  } catch (_error) {
-    // Ignore history back errors.
-  }
-
-  return false;
-}
-
-function returnToLineChat() {
-  if (tryCloseInAppWindow()) return;
-
-  window.setTimeout(() => {
-    tryCloseInAppWindow();
-    try {
-      window.location.replace(LINE_APP_FALLBACK_URL);
-    } catch (_error) {
-      window.location.href = LINE_APP_FALLBACK_URL;
-    }
-  }, LINE_APP_REDIRECT_DELAY_MS);
 }
 
 function mapRpcErrorToMessage(error) {
@@ -214,15 +167,12 @@ function clearTokenFromUrl() {
 }
 
 async function initLineLinkPage() {
-  elements.returnLineBtn?.addEventListener("click", returnToLineChat);
-
   const rawToken = getQueryParam("token");
   const token = normalizeToken(rawToken);
   if (!token) {
     setLead("ไม่พบ token สำหรับเชื่อมบัญชี");
     setStatus("ลิงก์นี้ไม่ถูกต้อง กรุณาพิมพ์ `เริ่มใช้งาน` ใน LINE OA เพื่อรับลิงก์ใหม่", "error");
     setDetail("Missing link token");
-    setReturnButtonEnabled(true);
     return;
   }
 
@@ -245,17 +195,15 @@ async function initLineLinkPage() {
     setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว", "success");
     setDetail(
       entityName
-        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว กดปุ่มด้านล่างเพื่อกลับไปแชท LINE`
-        : "เชื่อมบัญชีเรียบร้อยแล้ว กดปุ่มด้านล่างเพื่อกลับไปแชท LINE"
+        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว ปิดหน้านี้ (กด X มุมซ้ายบน) แล้วเริ่มแชทใน LINE ได้เลย`
+        : "เชื่อมบัญชีเรียบร้อยแล้ว ปิดหน้านี้ (กด X มุมซ้ายบน) แล้วเริ่มแชทใน LINE ได้เลย"
     );
     clearTokenFromUrl();
-    setReturnButtonEnabled(true);
   } catch (error) {
     console.error("[line-link] consume token failed:", error);
     setLead("เชื่อมบัญชีไม่สำเร็จ");
     setStatus(mapRpcErrorToMessage(error), "error");
     setDetail("ตรวจสอบลิงก์/สิทธิ์ผู้ใช้ แล้วลองใหม่อีกครั้ง");
-    setReturnButtonEnabled(true);
   }
 }
 
