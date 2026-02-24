@@ -1,0 +1,65 @@
+{
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "selected": true,
+  "name": "origo-richmenu-v1",
+  "chatBarText": "เมนู Origo",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "เริ่มใช้งาน",
+        "data": "cmd=link",
+        "displayText": "เริ่มใช้งาน"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "สถานะ",
+        "data": "cmd=status",
+        "displayText": "สถานะ"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "ช่วยเหลือ",
+        "data": "cmd=help",
+        "displayText": "ช่วยเหลือ"
+      }
+    },
+    {
+      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "สรุปสั้น",
+        "data": "cmd=summary",
+        "displayText": "สรุป finance กับ operation ล่าสุด สั้นๆ"
+      }
+    },
+    {
+      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "สรุปรายละเอียด",
+        "data": "cmd=detail",
+        "displayText": "สรุป finance กับ operation ล่าสุด แบบละเอียด"
+      }
+    },
+    {
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "action": {
+        "type": "postback",
+        "label": "ออกจากระบบ",
+        "data": "cmd=logout",
+        "displayText": "logout"
+      }
+    }
+  ]
+}

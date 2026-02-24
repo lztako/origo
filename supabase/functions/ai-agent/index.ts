@@ -2388,6 +2388,13 @@ Deno.serve(async (req: Request) => {
       ? "This request comes from LINE private chat. Available domains are operation and finance only for a single scoped entity. " +
         "Do not answer with market or product data in this channel. If user asks those domains, say they are unavailable in current LINE scope."
       : "";
+    const lineOutputRule = isLineInternalMode
+      ? expectsJson
+        ? "If JSON is requested, keep payload concise and include only fields needed for the asked intent."
+        : "LINE output style: use short-first by default. Return 4-6 lines maximum unless user explicitly asks for detail. " +
+          "Format: line 1 summary, lines 2-5 key metrics, final line recommended action. " +
+          "Use plain text only and never include markdown symbols."
+      : "";
     const productScopeRule = strictServerOnly
       ? "Use product rows exactly as provided in server_context."
       : "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope.";
@@ -2411,11 +2418,13 @@ Deno.serve(async (req: Request) => {
         "Always include explicit period labels when discussing trends. " +
         "Do not include source tags/citation blocks unless explicitly requested by user. " +
         lineInternalRule + " " +
+        lineOutputRule + " " +
         jsonOutputRule + " " +
         "If data is insufficient, state exactly which section in server_context.analytics.company_detail is missing."
       : "You are a business analyst for a dashboard with four domains: market (external), operation (internal), finance (internal), and product (internal). " +
         defaultSourceRule + " " +
         lineInternalRule + " " +
+        lineOutputRule + " " +
         "Prioritize server_context.focused_views according to server_context.intents_requested for this question. " +
         "Use only views relevant to the detected intent unless user explicitly asks cross-intent comparison. " +
         "Keep answers minimalist and concise, focusing only on the requested output. " +

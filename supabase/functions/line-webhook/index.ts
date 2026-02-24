@@ -15,6 +15,9 @@ const AI_TIMEOUT_MS = 22000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
 const DEFAULT_RATE_LIMIT_USER_PER_MINUTE = 20;
 const DEFAULT_RATE_LIMIT_ENTITY_PER_MINUTE = 120;
+const LINE_SHORT_REPLY_MAX_LINES = 6;
+const LINE_SHORT_REPLY_MAX_CHARS = 520;
+const LINE_SHORT_DETAIL_HINT = "พิมพ์ รายละเอียด หากต้องการข้อมูลเชิงลึกเพิ่มเติม";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -96,6 +99,57 @@ function normalizeCommand(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function stripLineMarkdown(text: string): string {
+  let output = String(text || "");
+  output = output.replace(/```[\s\S]*?```/g, "");
+  output = output.replace(/`([^`]*)`/g, "$1");
+  output = output.replace(/\*\*([^*]+)\*\*/g, "$1");
+  output = output.replace(/__([^_]+)__/g, "$1");
+  output = output.replace(/^\s{0,3}#{1,6}\s*/gm, "");
+  output = output.replace(/^\s*>\s?/gm, "");
+  output = output.replace(/^\s*[*•]\s+/gm, "- ");
+  output = output.replace(/\*\*/g, "");
+  output = output.replace(/__/g, "");
+  output = output.replace(/\r/g, "");
+  return output;
+}
+
+function shouldUseShortFirst(question: string): boolean {
+  const normalized = normalizeCommand(question);
+  if (!normalized) return true;
+  return !/(รายละเอียด|detail|ละเอียด|full report|full|เจาะลึก|deep dive|table|ทั้งหมด|ทุกบรรทัด)/i.test(normalized);
+}
+
+function applyLineAnswerPolicy(answer: string, question: string): string {
+  const cleaned = trimText(stripLineMarkdown(answer), MAX_TEXT_CHARS)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (!cleaned) return RESPONSES.SYSTEM_FALLBACK;
+  if (!shouldUseShortFirst(question)) return cleaned;
+
+  const lines = cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+  if (!lines.length) return RESPONSES.SYSTEM_FALLBACK;
+
+  let shortened = lines.slice(0, LINE_SHORT_REPLY_MAX_LINES).join("\n");
+  const truncatedByLines = lines.length > LINE_SHORT_REPLY_MAX_LINES;
+  const truncatedByChars = shortened.length > LINE_SHORT_REPLY_MAX_CHARS;
+
+  if (truncatedByChars) {
+    shortened = trimText(shortened, LINE_SHORT_REPLY_MAX_CHARS);
+  }
+
+  if (truncatedByLines || truncatedByChars) {
+    shortened = trimText(`${shortened}\n${LINE_SHORT_DETAIL_HINT}`, MAX_TEXT_CHARS);
+  }
+
+  return shortened;
+}
+
 function parseCommand(text: string): "link" | "status" | "help" | "logout" | "confirm_logout" | "cancel_service" | "question" {
   const normalized = normalizeCommand(text);
   if (COMMAND_LINK.has(normalized)) return "link";
@@ -122,6 +176,75 @@ function extractTextMessage(event: any): string | null {
   if (String(event?.message?.type || "").trim() !== "text") return null;
   const text = trimText(event?.message?.text || "", MAX_TEXT_CHARS);
   return text || null;
+}
+
+function parsePostbackDataToCommandText(rawData: string): string | null {
+  const raw = String(rawData || "").trim();
+  if (!raw) return null;
+
+  const candidates: string[] = [];
+  candidates.push(normalizeCommand(raw));
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const keys = ["cmd", "command", "action", "intent", "text"];
+      for (const key of keys) {
+        const value = normalizeCommand((parsed as Record<string, unknown>)[key] || "");
+        if (value) candidates.push(value);
+      }
+    }
+  } catch (_error) {
+    // Not JSON, continue with query-string parser.
+  }
+
+  try {
+    const params = new URLSearchParams(raw);
+    const keys = ["cmd", "command", "action", "intent", "text"];
+    for (const key of keys) {
+      const value = normalizeCommand(params.get(key) || "");
+      if (value) candidates.push(value);
+    }
+  } catch (_error) {
+    // Keep raw candidate only.
+  }
+
+  const normalizeCandidate = (value: string) =>
+    normalizeCommand(value).replace(/^(cmd|command|action|intent|text)\s*=\s*/, "").trim();
+
+  for (const candidate of candidates) {
+    const normalized = normalizeCandidate(candidate);
+    if (!normalized) continue;
+    if (normalized === "link" || normalized === "start") return "เริ่มใช้งาน";
+    if (normalized === "status") return "สถานะ";
+    if (normalized === "help") return "ช่วยเหลือ";
+    if (normalized === "summary" || normalized === "quick_summary" || normalized === "monthly_summary") {
+      return "สรุป finance กับ operation ล่าสุด สั้นๆ";
+    }
+    if (normalized === "detail" || normalized === "detail_summary" || normalized === "deep_dive") {
+      return "สรุป finance กับ operation ล่าสุด แบบละเอียด";
+    }
+    if (normalized === "logout") return "logout";
+    if (normalized === "confirm_logout" || normalized === "confirm-logout" || normalized === "confirm logout") {
+      return "ยืนยัน logout";
+    }
+    if (normalized === "cancel_service" || normalized === "cancel-service") return "ยกเลิกบริการ";
+  }
+
+  return null;
+}
+
+function extractInboundText(event: any): string | null {
+  const textMessage = extractTextMessage(event);
+  if (textMessage) return textMessage;
+
+  if (String(event?.type || "").trim() === "postback") {
+    const data = String(event?.postback?.data || "").trim();
+    const parsed = parsePostbackDataToCommandText(data);
+    if (parsed) return parsed;
+  }
+
+  return null;
 }
 
 function getLineEventType(event: any): string {
@@ -213,6 +336,9 @@ function sanitizeRawEventPayload(payload: any): JsonRecord {
 
   if (typeof cloned?.message?.text === "string") {
     cloned.message.text = trimText(maskSensitiveText(cloned.message.text), MAX_TEXT_CHARS);
+  }
+  if (typeof cloned?.postback?.data === "string") {
+    cloned.postback.data = trimText(maskSensitiveText(cloned.postback.data), MAX_TEXT_CHARS);
   }
   if (typeof cloned?.source?.userId === "string") {
     cloned.source.userId = maskLineUserId(cloned.source.userId);
@@ -530,7 +656,7 @@ async function callAiAgentForLine(input: {
       }
 
       if (response.ok) {
-        const answer = trimText(String(body?.answer || "").trim(), MAX_TEXT_CHARS);
+        const answer = applyLineAnswerPolicy(String(body?.answer || ""), input.question);
         return {
           answer: answer || RESPONSES.SYSTEM_FALLBACK,
           requestId: String(body?.request_id || "").trim() || null,
@@ -855,7 +981,7 @@ Deno.serve(async (req: Request) => {
     let resolvedEntityId: string | null = null;
     try {
       const replyToken = extractReplyToken(event);
-      const inboundText = extractTextMessage(event);
+      const inboundText = extractInboundText(event);
 
       if (!lineUserId || !replyToken || !inboundText) {
         await updateWebhookEventState(adminClient, lineEventId, true, null, null);

@@ -40,6 +40,24 @@ Function path: `supabase/functions/line-webhook/index.ts`
 - `ยืนยัน logout`
 - `ยกเลิกบริการ`
 
+## Rich Menu v1 (recommended)
+
+Webhook now supports both:
+- text message commands
+- postback commands (recommended for rich menu)
+
+Recommended postback `data` values:
+- `cmd=link`
+- `cmd=status`
+- `cmd=help`
+- `cmd=summary`
+- `cmd=detail`
+- `cmd=logout`
+- `cmd=confirm_logout`
+- `cmd=cancel_service`
+
+These values are normalized into existing command flow, so no separate backend route is required.
+
 ## Current behavior
 
 - Unlinked users receive link-required response.
