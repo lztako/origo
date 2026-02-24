@@ -89,9 +89,10 @@ function buildLoginUrlWithNext() {
     : fileName;
 
   const loginParams = new URLSearchParams();
+  loginParams.set("env", runtimeConfig.envKey || "prod");
   loginParams.set(FORCE_LOGIN_QUERY_KEY, "1");
   loginParams.set("next", nextPath);
-  return appendEnvToPath(`login.html?${loginParams.toString()}`);
+  return `login.html?${loginParams.toString()}`;
 }
 
 function redirectToLoginPage() {
