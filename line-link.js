@@ -10,7 +10,6 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
     };
 
 const elements = {
-  panel: document.querySelector(".line-link-centered"),
   lead: document.getElementById("lineLinkLead"),
   status: document.getElementById("lineLinkStatus"),
   detail: document.getElementById("lineLinkDetail")
@@ -39,11 +38,6 @@ function setLead(message) {
 
 function setDetail(message) {
   if (elements.detail) elements.detail.textContent = String(message || "");
-}
-
-function setSuccessMode(enabled) {
-  if (!elements.panel) return;
-  elements.panel.classList.toggle("line-link-success", Boolean(enabled));
 }
 
 function getQueryParam(name) {
@@ -161,7 +155,6 @@ function clearTokenFromUrl() {
 }
 
 async function initLineLinkPage() {
-  setSuccessMode(false);
   const rawToken = getQueryParam("token");
   const token = normalizeToken(rawToken);
   if (!token) {
@@ -188,11 +181,9 @@ async function initLineLinkPage() {
     setLead("ยินดีต้อนรับ");
     setStatus("เชื่อมต่อสำเร็จแล้ว", "success");
     setDetail("");
-    setSuccessMode(true);
     clearTokenFromUrl();
   } catch (error) {
     console.error("[line-link] consume token failed:", error);
-    setSuccessMode(false);
     setLead("เชื่อมบัญชีไม่สำเร็จ");
     setStatus(mapRpcErrorToMessage(error), "error");
     setDetail("ตรวจสอบลิงก์/สิทธิ์ผู้ใช้ แล้วลองใหม่อีกครั้ง");
