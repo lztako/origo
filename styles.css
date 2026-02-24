@@ -2001,6 +2001,26 @@ body.login-page {
   text-align: center;
 }
 
+.line-link-centered.line-link-success #lineLinkTitle,
+.line-link-centered.line-link-success #lineLinkDetail,
+.line-link-centered.line-link-success .line-link-static-hint {
+  display: none;
+}
+
+.line-link-centered.line-link-success #lineLinkLead {
+  margin-top: 0;
+  font-size: clamp(1.7rem, 1.2vw + 1.3rem, 2.3rem);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.line-link-centered.line-link-success #lineLinkStatus {
+  min-height: 0;
+  margin-top: 0.45rem;
+  font-size: clamp(1.05rem, 0.8vw + 0.85rem, 1.5rem);
+  font-weight: 700;
+}
+
 @media (max-width: 980px) {
   body {
     height: auto;

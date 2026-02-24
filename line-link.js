@@ -10,6 +10,7 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
     };
 
 const elements = {
+  panel: document.querySelector(".line-link-centered"),
   lead: document.getElementById("lineLinkLead"),
   status: document.getElementById("lineLinkStatus"),
   detail: document.getElementById("lineLinkDetail")
@@ -38,6 +39,11 @@ function setLead(message) {
 
 function setDetail(message) {
   if (elements.detail) elements.detail.textContent = String(message || "");
+}
+
+function setSuccessMode(enabled) {
+  if (!elements.panel) return;
+  elements.panel.classList.toggle("line-link-success", Boolean(enabled));
 }
 
 function getQueryParam(name) {
@@ -129,18 +135,6 @@ async function requireAuthenticatedSession() {
   }
 }
 
-async function loadEntityName(entityId) {
-  if (!entityId) return "";
-  const { data, error } = await supabaseClient
-    .from("company_entities")
-    .select("company_name")
-    .eq("entity_id", entityId)
-    .maybeSingle();
-
-  if (error || !data?.company_name) return "";
-  return String(data.company_name || "").trim();
-}
-
 async function consumeLinkToken(token) {
   const { data, error } = await supabaseClient.rpc("consume_line_link_token", {
     p_link_token: token
@@ -167,6 +161,7 @@ function clearTokenFromUrl() {
 }
 
 async function initLineLinkPage() {
+  setSuccessMode(false);
   const rawToken = getQueryParam("token");
   const token = normalizeToken(rawToken);
   if (!token) {
@@ -189,18 +184,15 @@ async function initLineLinkPage() {
   setDetail("");
 
   try {
-    const linked = await consumeLinkToken(token);
-    const entityName = await loadEntityName(linked.entity_id);
+    await consumeLinkToken(token);
     setLead("ยินดีต้อนรับ");
-    setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว", "success");
-    setDetail(
-      entityName
-        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว ปิดหน้านี้ (กด X มุมซ้ายบน) แล้วเริ่มแชทใน LINE ได้เลย`
-        : "เชื่อมบัญชีเรียบร้อยแล้ว ปิดหน้านี้ (กด X มุมซ้ายบน) แล้วเริ่มแชทใน LINE ได้เลย"
-    );
+    setStatus("เชื่อมต่อสำเร็จแล้ว", "success");
+    setDetail("");
+    setSuccessMode(true);
     clearTokenFromUrl();
   } catch (error) {
     console.error("[line-link] consume token failed:", error);
+    setSuccessMode(false);
     setLead("เชื่อมบัญชีไม่สำเร็จ");
     setStatus(mapRpcErrorToMessage(error), "error");
     setDetail("ตรวจสอบลิงก์/สิทธิ์ผู้ใช้ แล้วลองใหม่อีกครั้ง");
