@@ -18,10 +18,9 @@ const elements = {
 
 const LINE_AUTH_QUERY_KEY = "line_auth";
 const FORCE_LOGIN_QUERY_KEY = "force_login";
-const LINE_APP_DEEP_LINK = "line://";
 const LINE_APP_FALLBACK_URL = "https://line.me/R/";
 const AUTO_RETURN_DELAY_MS = 900;
-const AUTO_RETURN_FALLBACK_DELAY_MS = 350;
+const LINE_APP_REDIRECT_DELAY_MS = 120;
 let autoReturnScheduled = false;
 
 if (!runtimeConfig.ready) {
@@ -124,16 +123,14 @@ function tryCloseInAppWindow() {
 function returnToLineChat() {
   if (tryCloseInAppWindow()) return;
 
-  try {
-    window.location.replace(LINE_APP_DEEP_LINK);
-  } catch (_error) {
-    // Continue to fallback URL below.
-  }
-
   window.setTimeout(() => {
     tryCloseInAppWindow();
-    window.location.replace(LINE_APP_FALLBACK_URL);
-  }, AUTO_RETURN_FALLBACK_DELAY_MS);
+    try {
+      window.location.replace(LINE_APP_FALLBACK_URL);
+    } catch (_error) {
+      window.location.href = LINE_APP_FALLBACK_URL;
+    }
+  }, LINE_APP_REDIRECT_DELAY_MS);
 }
 
 function scheduleAutoReturnToLine() {

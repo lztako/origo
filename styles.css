@@ -1993,6 +1993,14 @@ body.login-page {
   text-decoration: none;
 }
 
+.line-link-centered,
+.line-link-centered h2,
+.line-link-centered p,
+.line-link-centered .login-status,
+.line-link-centered .login-help {
+  text-align: center;
+}
+
 @media (max-width: 980px) {
   body {
     height: auto;
