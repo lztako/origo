@@ -6,25 +6,23 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
       url: "https://adybfyqyoyinmpsftrde.supabase.co",
       publishableKey: "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe",
       ready: true,
-      errorMessage: "",
-      appendEnvToPath: (path) => String(path || "")
+      errorMessage: ""
     };
 
 const elements = {
   lead: document.getElementById("lineLinkLead"),
   status: document.getElementById("lineLinkStatus"),
   detail: document.getElementById("lineLinkDetail"),
-  userMeta: document.getElementById("lineLinkUserMeta"),
-  environment: document.getElementById("lineLinkEnvironment"),
-  openDashboardBtn: document.getElementById("lineLinkOpenDashboardBtn")
+  returnLineBtn: document.getElementById("lineLinkReturnLineBtn")
 };
 
 const LINE_AUTH_QUERY_KEY = "line_auth";
 const FORCE_LOGIN_QUERY_KEY = "force_login";
-
-const appendEnvToPath = typeof runtimeConfig.appendEnvToPath === "function"
-  ? runtimeConfig.appendEnvToPath
-  : (path) => String(path || "");
+const LINE_APP_DEEP_LINK = "line://";
+const LINE_APP_FALLBACK_URL = "https://line.me/R/";
+const AUTO_RETURN_DELAY_MS = 900;
+const AUTO_RETURN_FALLBACK_DELAY_MS = 350;
+let autoReturnScheduled = false;
 
 if (!runtimeConfig.ready) {
   throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
@@ -46,13 +44,6 @@ function setLead(message) {
 
 function setDetail(message) {
   if (elements.detail) elements.detail.textContent = String(message || "");
-}
-
-function setEnvironmentLabel() {
-  if (!elements.environment) return;
-  const envLabel = String(runtimeConfig.label || runtimeConfig.envKey || "PROD").trim().toUpperCase();
-  const suffix = runtimeConfig.envKey === "demo" ? " (mock data only)" : "";
-  elements.environment.textContent = `Environment: ${envLabel}${suffix}`;
 }
 
 function getQueryParam(name) {
@@ -99,8 +90,58 @@ function redirectToLoginPage() {
   window.location.replace(buildLoginUrlWithNext());
 }
 
-function openDashboard() {
-  window.location.replace(appendEnvToPath("index.html"));
+function setReturnButtonEnabled(enabled) {
+  if (!elements.returnLineBtn) return;
+  elements.returnLineBtn.disabled = !enabled;
+}
+
+function tryCloseInAppWindow() {
+  try {
+    const liffAny = window.liff;
+    if (liffAny && typeof liffAny.closeWindow === "function") {
+      liffAny.closeWindow();
+      return true;
+    }
+  } catch (_error) {
+    // Ignore LIFF close errors and continue fallback behavior.
+  }
+
+  try {
+    window.close();
+  } catch (_error) {
+    // Ignore window close errors.
+  }
+
+  try {
+    window.history.back();
+  } catch (_error) {
+    // Ignore history back errors.
+  }
+
+  return false;
+}
+
+function returnToLineChat() {
+  if (tryCloseInAppWindow()) return;
+
+  try {
+    window.location.replace(LINE_APP_DEEP_LINK);
+  } catch (_error) {
+    // Continue to fallback URL below.
+  }
+
+  window.setTimeout(() => {
+    tryCloseInAppWindow();
+    window.location.replace(LINE_APP_FALLBACK_URL);
+  }, AUTO_RETURN_FALLBACK_DELAY_MS);
+}
+
+function scheduleAutoReturnToLine() {
+  if (autoReturnScheduled) return;
+  autoReturnScheduled = true;
+  window.setTimeout(() => {
+    returnToLineChat();
+  }, AUTO_RETURN_DELAY_MS);
 }
 
 function mapRpcErrorToMessage(error) {
@@ -186,8 +227,7 @@ function clearTokenFromUrl() {
 }
 
 async function initLineLinkPage() {
-  setEnvironmentLabel();
-  elements.openDashboardBtn?.addEventListener("click", openDashboard);
+  elements.returnLineBtn?.addEventListener("click", returnToLineChat);
 
   const rawToken = getQueryParam("token");
   const token = normalizeToken(rawToken);
@@ -195,6 +235,7 @@ async function initLineLinkPage() {
     setLead("ไม่พบ token สำหรับเชื่อมบัญชี");
     setStatus("ลิงก์นี้ไม่ถูกต้อง กรุณาพิมพ์ `เริ่มใช้งาน` ใน LINE OA เพื่อรับลิงก์ใหม่", "error");
     setDetail("Missing link token");
+    setReturnButtonEnabled(true);
     return;
   }
 
@@ -206,13 +247,6 @@ async function initLineLinkPage() {
   const authState = await requireAuthenticatedSession();
   if (!authState?.user) return;
 
-  const userEmail = String(authState.user.email || "").trim();
-  if (elements.userMeta) {
-    elements.userMeta.textContent = userEmail
-      ? `Signed in as: ${userEmail}`
-      : "Signed in";
-  }
-
   setLead("กำลังเชื่อมบัญชี LINE กับบัญชีผู้ใช้ของคุณ");
   setStatus("กำลังประมวลผล...", "info");
   setDetail("");
@@ -220,22 +254,22 @@ async function initLineLinkPage() {
   try {
     const linked = await consumeLinkToken(token);
     const entityName = await loadEntityName(linked.entity_id);
-    setLead("เชื่อมบัญชีสำเร็จ");
-    setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว สามารถกลับไปถามใน LINE ได้ทันที", "success");
+    setLead("ยินดีต้อนรับ");
+    setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว", "success");
     setDetail(
       entityName
-        ? `บริษัท: ${entityName}`
-        : "ระบบผูกสิทธิ์บริษัทเรียบร้อยแล้ว"
+        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว กำลังพากลับไปแชท LINE`
+        : "เชื่อมบัญชีเรียบร้อยแล้ว กำลังพากลับไปแชท LINE"
     );
     clearTokenFromUrl();
-    if (elements.openDashboardBtn) {
-      elements.openDashboardBtn.disabled = false;
-    }
+    setReturnButtonEnabled(true);
+    scheduleAutoReturnToLine();
   } catch (error) {
     console.error("[line-link] consume token failed:", error);
     setLead("เชื่อมบัญชีไม่สำเร็จ");
     setStatus(mapRpcErrorToMessage(error), "error");
     setDetail("ตรวจสอบลิงก์/สิทธิ์ผู้ใช้ แล้วลองใหม่อีกครั้ง");
+    setReturnButtonEnabled(true);
   }
 }
 
