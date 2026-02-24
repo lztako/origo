@@ -10,11 +10,15 @@ const corsHeaders = {
 const MAX_TEXT_CHARS = 1200;
 const LINK_TOKEN_TTL_MINUTES = 10;
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
+const LINE_LOADING_START_ENDPOINT = "https://api.line.me/v2/bot/chat/loading/start";
 const AI_AGENT_PATH = "/functions/v1/ai-agent";
 const AI_TIMEOUT_MS = 22000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
 const DEFAULT_RATE_LIMIT_USER_PER_MINUTE = 20;
 const DEFAULT_RATE_LIMIT_ENTITY_PER_MINUTE = 120;
+const DEFAULT_LINE_LOADING_SECONDS = 20;
+const MIN_LINE_LOADING_SECONDS = 5;
+const MAX_LINE_LOADING_SECONDS = 60;
 const LINE_SHORT_REPLY_MAX_LINES = 6;
 const LINE_SHORT_REPLY_MAX_CHARS = 520;
 const LINE_SHORT_DETAIL_HINT = "พิมพ์ รายละเอียด หากต้องการข้อมูลเชิงลึกเพิ่มเติม";
@@ -292,6 +296,19 @@ function getEnvInt(name: string, fallback: number): number {
   const raw = Number(Deno.env.get(name));
   if (!Number.isFinite(raw) || raw <= 0) return fallback;
   return Math.floor(raw);
+}
+
+function getEnvBoolean(name: string, fallback: boolean): boolean {
+  const raw = String(Deno.env.get(name) || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
+}
+
+function getLineLoadingSeconds(): number {
+  const raw = getEnvInt("LINE_LOADING_SECONDS", DEFAULT_LINE_LOADING_SECONDS);
+  return Math.max(MIN_LINE_LOADING_SECONDS, Math.min(MAX_LINE_LOADING_SECONDS, raw));
 }
 
 function maskEmail(value: string): string {
@@ -723,6 +740,40 @@ async function sendLineReply(channelAccessToken: string, replyToken: string, tex
   };
 }
 
+async function sendLineLoadingIndicator(channelAccessToken: string, lineUserId: string): Promise<{ ok: boolean; error: string | null }> {
+  if (!getEnvBoolean("LINE_LOADING_ENABLED", true)) {
+    return { ok: true, error: null };
+  }
+
+  const loadingSeconds = getLineLoadingSeconds();
+  try {
+    const response = await fetch(LINE_LOADING_START_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${channelAccessToken}`
+      },
+      body: JSON.stringify({
+        chatId: lineUserId,
+        loadingSeconds
+      })
+    });
+
+    if (response.ok) return { ok: true, error: null };
+
+    const errorText = trimText(await response.text(), 600);
+    return {
+      ok: false,
+      error: `LINE loading failed (${response.status}): ${errorText}`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `LINE loading exception: ${trimText(String((error as Error)?.message || error || "unknown"), 600)}`
+    };
+  }
+}
+
 async function decideReply(adminClient: any, lineUserId: string, inboundText: string, linkContext: LinkContext): Promise<ReplyDecision> {
   const command = parseCommand(inboundText);
 
@@ -1038,6 +1089,7 @@ Deno.serve(async (req: Request) => {
         linkContext.active?.entity_id &&
         linkContext.active?.user_id
       ) {
+        await sendLineLoadingIndicator(channelAccessToken, lineUserId);
         const aiReply = await callAiAgentForLine({
           question: inboundText,
           lineUserId,

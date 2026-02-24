@@ -27,6 +27,10 @@ Function path: `supabase/functions/line-webhook/index.ts`
   - Account-link page URL.
   - Function appends `?token=...` (or `&token=...`) and writes token to `public.line_link_tokens`.
   - Example: `https://your-domain.com/line-link.html`
+- `LINE_LOADING_ENABLED` (default `true`)
+  - Send LINE chat loading indicator before AI response.
+- `LINE_LOADING_SECONDS` (default `20`, range `5-60`)
+  - Duration for each loading request.
 - `LINE_REPLAY_WINDOW_SECONDS` (default `300`)
 - `LINE_RATE_LIMIT_USER_PER_MINUTE` (default `20`)
 - `LINE_RATE_LIMIT_ENTITY_PER_MINUTE` (default `120`)
