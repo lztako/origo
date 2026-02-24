@@ -1,0 +1,213 @@
+const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
+  ? window.getSupabaseRuntimeConfig()
+  : {
+      envKey: "prod",
+      label: "PROD",
+      url: "https://adybfyqyoyinmpsftrde.supabase.co",
+      publishableKey: "sb_publishable_ho8IqSNFZgb6xS6LSJDUAw_QNJiyAVe",
+      ready: true,
+      errorMessage: "",
+      appendEnvToPath: (path) => String(path || "")
+    };
+
+const elements = {
+  lead: document.getElementById("lineLinkLead"),
+  status: document.getElementById("lineLinkStatus"),
+  detail: document.getElementById("lineLinkDetail"),
+  userMeta: document.getElementById("lineLinkUserMeta"),
+  environment: document.getElementById("lineLinkEnvironment"),
+  openDashboardBtn: document.getElementById("lineLinkOpenDashboardBtn")
+};
+
+const appendEnvToPath = typeof runtimeConfig.appendEnvToPath === "function"
+  ? runtimeConfig.appendEnvToPath
+  : (path) => String(path || "");
+
+if (!runtimeConfig.ready) {
+  throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
+}
+
+const supabaseClient = window.supabase.createClient(runtimeConfig.url, runtimeConfig.publishableKey);
+
+function setStatus(message, type = "info") {
+  if (!elements.status) return;
+  elements.status.textContent = String(message || "");
+  elements.status.className = "login-status";
+  if (type === "error") elements.status.classList.add("error");
+  if (type === "success") elements.status.classList.add("success");
+}
+
+function setLead(message) {
+  if (elements.lead) elements.lead.textContent = String(message || "");
+}
+
+function setDetail(message) {
+  if (elements.detail) elements.detail.textContent = String(message || "");
+}
+
+function setEnvironmentLabel() {
+  if (!elements.environment) return;
+  const envLabel = String(runtimeConfig.label || runtimeConfig.envKey || "PROD").trim().toUpperCase();
+  const suffix = runtimeConfig.envKey === "demo" ? " (mock data only)" : "";
+  elements.environment.textContent = `Environment: ${envLabel}${suffix}`;
+}
+
+function getQueryParam(name) {
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get(name) || "").trim();
+}
+
+function normalizeToken(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 256);
+}
+
+function buildLoginUrlWithNext() {
+  const pathName = String(window.location.pathname || "");
+  const fileName = pathName.endsWith("/")
+    ? "line-link.html"
+    : (pathName.split("/").pop() || "line-link.html");
+  const nextPath = `${fileName}${window.location.search || ""}`;
+  return appendEnvToPath(`login.html?next=${encodeURIComponent(nextPath)}`);
+}
+
+function redirectToLoginPage() {
+  window.location.replace(buildLoginUrlWithNext());
+}
+
+function openDashboard() {
+  window.location.replace(appendEnvToPath("index.html"));
+}
+
+function mapRpcErrorToMessage(error) {
+  const rawMessage = String(error?.message || "").toLowerCase();
+  if (rawMessage.includes("line_link_token_expired")) {
+    return "ลิงก์นี้หมดอายุแล้ว กรุณาพิมพ์ `เริ่มใช้งาน` ใน LINE OA เพื่อรับลิงก์ใหม่";
+  }
+  if (rawMessage.includes("line_link_token_not_found")) {
+    return "ไม่พบลิงก์เชื่อมบัญชี กรุณาขอลิงก์ใหม่จาก LINE OA";
+  }
+  if (rawMessage.includes("line_link_token_not_issued") || rawMessage.includes("line_link_token_already_used")) {
+    return "ลิงก์นี้ถูกใช้งานไปแล้ว กรุณาขอลิงก์ใหม่จาก LINE OA";
+  }
+  if (rawMessage.includes("line_link_membership_not_found")) {
+    return "บัญชีนี้ยังไม่มีสิทธิ์เข้าใช้งานบริษัท กรุณาติดต่อผู้ดูแลระบบ";
+  }
+  if (rawMessage.includes("line_link_user_not_authenticated")) {
+    return "ไม่พบสถานะล็อกอิน กรุณาเข้าสู่ระบบใหม่อีกครั้ง";
+  }
+  return "ไม่สามารถเชื่อมบัญชีได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง";
+}
+
+async function requireAuthenticatedSession() {
+  try {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError || !sessionData?.session) {
+      redirectToLoginPage();
+      return null;
+    }
+
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !userData?.user) {
+      await supabaseClient.auth.signOut().catch(() => {});
+      redirectToLoginPage();
+      return null;
+    }
+
+    return {
+      session: sessionData.session,
+      user: userData.user
+    };
+  } catch (_error) {
+    redirectToLoginPage();
+    return null;
+  }
+}
+
+async function loadEntityName(entityId) {
+  if (!entityId) return "";
+  const { data, error } = await supabaseClient
+    .from("company_entities")
+    .select("company_name")
+    .eq("entity_id", entityId)
+    .maybeSingle();
+
+  if (error || !data?.company_name) return "";
+  return String(data.company_name || "").trim();
+}
+
+async function consumeLinkToken(token) {
+  const { data, error } = await supabaseClient.rpc("consume_line_link_token", {
+    p_link_token: token
+  });
+
+  if (error) throw error;
+  const firstRow = Array.isArray(data) ? data[0] : null;
+  if (!firstRow?.entity_id || !firstRow?.line_user_id) {
+    throw new Error("line_link_unexpected_response");
+  }
+  return firstRow;
+}
+
+function clearTokenFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("token");
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  } catch (_error) {
+    // Ignore URL cleanup failures.
+  }
+}
+
+async function initLineLinkPage() {
+  setEnvironmentLabel();
+  elements.openDashboardBtn?.addEventListener("click", openDashboard);
+
+  const rawToken = getQueryParam("token");
+  const token = normalizeToken(rawToken);
+  if (!token) {
+    setLead("ไม่พบ token สำหรับเชื่อมบัญชี");
+    setStatus("ลิงก์นี้ไม่ถูกต้อง กรุณาพิมพ์ `เริ่มใช้งาน` ใน LINE OA เพื่อรับลิงก์ใหม่", "error");
+    setDetail("Missing link token");
+    return;
+  }
+
+  const authState = await requireAuthenticatedSession();
+  if (!authState?.user) return;
+
+  const userEmail = String(authState.user.email || "").trim();
+  if (elements.userMeta) {
+    elements.userMeta.textContent = userEmail
+      ? `Signed in as: ${userEmail}`
+      : "Signed in";
+  }
+
+  setLead("กำลังเชื่อมบัญชี LINE กับบัญชีผู้ใช้ของคุณ");
+  setStatus("กำลังประมวลผล...", "info");
+  setDetail("");
+
+  try {
+    const linked = await consumeLinkToken(token);
+    const entityName = await loadEntityName(linked.entity_id);
+    setLead("เชื่อมบัญชีสำเร็จ");
+    setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว สามารถกลับไปถามใน LINE ได้ทันที", "success");
+    setDetail(
+      entityName
+        ? `บริษัท: ${entityName}`
+        : "ระบบผูกสิทธิ์บริษัทเรียบร้อยแล้ว"
+    );
+    clearTokenFromUrl();
+    if (elements.openDashboardBtn) {
+      elements.openDashboardBtn.disabled = false;
+    }
+  } catch (error) {
+    console.error("[line-link] consume token failed:", error);
+    setLead("เชื่อมบัญชีไม่สำเร็จ");
+    setStatus(mapRpcErrorToMessage(error), "error");
+    setDetail("ตรวจสอบลิงก์/สิทธิ์ผู้ใช้ แล้วลองใหม่อีกครั้ง");
+  }
+}
+
+initLineLinkPage();

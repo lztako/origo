@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-line-internal-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
@@ -15,6 +15,15 @@ const TOP_CUSTOMER_LIMIT = 10;
 const MAX_MESSAGES_FOR_MODEL = 10;
 const MAX_MESSAGE_CHARS = 1200;
 const MAX_PROMPT_CHARS = 1200;
+const INTERNAL_LINE_CHANNEL = "line";
+
+const ENTITY_SCOPED_TABLE_KEY_COLUMNS: Record<string, string> = {
+  finance_invoices: "id",
+  operation_contracts: "contract_id",
+  operation_lines: "line_id",
+  operation_deliveries: "delivery_id",
+  operation_stock: "stock_id"
+};
 
 type NormalizedMessage = { role: "user" | "assistant"; content: string };
 type DomainSelection = { finance: boolean; operation: boolean; market: boolean; product: boolean };
@@ -55,6 +64,15 @@ type AllowlistTableSpec = {
   ascending?: boolean;
   notNull?: string;
   limit?: number;
+};
+
+type AuthState = {
+  client: any | null;
+  user: { id: string } | null;
+  error: string | null;
+  auth_mode: "user_jwt" | "line_internal" | "unknown";
+  scoped_entity_id: string | null;
+  scoped_user_id: string | null;
 };
 
 const ALLOWLIST_TABLES: AllowlistTableSpec[] = [
@@ -386,12 +404,35 @@ function detectRequestedIntents(question: string): IntentSelection {
   };
 }
 
+function isUuidLike(value: unknown): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+function timingSafeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  let diff = 0;
+  for (let i = 0; i < leftBytes.length; i += 1) {
+    diff |= leftBytes[i] ^ rightBytes[i];
+  }
+  return diff === 0;
+}
+
 function getBearerToken(req: Request): string | null {
   const headerValue = req.headers.get("authorization") || req.headers.get("Authorization");
   if (!headerValue) return null;
 
   const matched = headerValue.match(/^Bearer\s+(.+)$/i);
   return matched?.[1]?.trim() || null;
+}
+
+function getInternalLineSecretHeader(req: Request): string {
+  return String(
+    req.headers.get("x-line-internal-secret") ||
+    req.headers.get("X-Line-Internal-Secret") ||
+    ""
+  ).trim();
 }
 
 function getSupabaseUserClient(accessToken: string) {
@@ -412,13 +453,107 @@ function getSupabaseUserClient(accessToken: string) {
   });
 }
 
-async function authenticateRequest(req: Request) {
+function getSupabaseServiceRoleClient() {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) return null;
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+
+async function authenticateLineInternalScope(req: Request, body: any): Promise<AuthState | null> {
+  const expectedSecret = String(Deno.env.get("LINE_AI_INTERNAL_SECRET") || "").trim();
+  const providedSecret = getInternalLineSecretHeader(req);
+  if (!expectedSecret || !providedSecret) return null;
+  if (!timingSafeEqual(providedSecret, expectedSecret)) return null;
+
+  const channel = String(body?.channel || "").trim().toLowerCase();
+  const entityId = String(body?.internal_scope?.entity_id || "").trim();
+  const userId = String(body?.internal_scope?.user_id || "").trim();
+
+  if (channel !== INTERNAL_LINE_CHANNEL) {
+    return {
+      client: null,
+      user: null,
+      error: "Invalid internal channel",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
+    };
+  }
+
+  if (!isUuidLike(entityId) || !isUuidLike(userId)) {
+    return {
+      client: null,
+      user: null,
+      error: "Invalid internal scope",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
+    };
+  }
+
+  const serviceClient = getSupabaseServiceRoleClient();
+  if (!serviceClient) {
+    return {
+      client: null,
+      user: null,
+      error: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
+    };
+  }
+
+  const { data, error } = await serviceClient
+    .from("company_user_members")
+    .select("entity_id, user_id, is_active")
+    .eq("entity_id", entityId)
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error || !data) {
+    return {
+      client: null,
+      user: null,
+      error: "Invalid internal scope mapping",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
+    };
+  }
+
+  return {
+    client: serviceClient,
+    user: { id: userId },
+    error: null,
+    auth_mode: "line_internal",
+    scoped_entity_id: entityId,
+    scoped_user_id: userId
+  };
+}
+
+async function authenticateRequest(req: Request, body: any): Promise<AuthState> {
+  const internalAuthState = await authenticateLineInternalScope(req, body);
+  if (internalAuthState) {
+    return internalAuthState;
+  }
+
   const accessToken = getBearerToken(req);
   if (!accessToken) {
     return {
       client: null,
       user: null,
-      error: "Missing Bearer token"
+      error: "Missing Bearer token",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
     };
   }
 
@@ -427,7 +562,10 @@ async function authenticateRequest(req: Request) {
     return {
       client: null,
       user: null,
-      error: "SUPABASE_URL or SUPABASE_ANON_KEY is not configured"
+      error: "SUPABASE_URL or SUPABASE_ANON_KEY is not configured",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
     };
   }
 
@@ -436,14 +574,20 @@ async function authenticateRequest(req: Request) {
     return {
       client: null,
       user: null,
-      error: "Invalid or expired token"
+      error: "Invalid or expired token",
+      auth_mode: "unknown",
+      scoped_entity_id: null,
+      scoped_user_id: null
     };
   }
 
   return {
     client,
     user: data.user,
-    error: null
+    error: null,
+    auth_mode: "user_jwt",
+    scoped_entity_id: null,
+    scoped_user_id: data.user.id
   };
 }
 
@@ -492,6 +636,97 @@ async function loadAllowlistedTable(client: any, spec: AllowlistTableSpec) {
       rows: [],
       citation,
       error: String((error as Error)?.message || "failed to load table")
+    };
+  }
+}
+
+async function loadEntityScopedAllowlistedTable(client: any, spec: AllowlistTableSpec, entityId: string) {
+  const keyColumn = ENTITY_SCOPED_TABLE_KEY_COLUMNS[spec.table];
+  const sourceDomain = spec.domain === "finance" || spec.domain === "operation"
+    ? spec.domain
+    : null;
+
+  const emptyCitation: SourceCitation = {
+    id: spec.id,
+    table: spec.table,
+    domain: spec.domain,
+    fields: spec.fields,
+    row_count: 0,
+    note: spec.note
+  };
+
+  if (!keyColumn || !sourceDomain) {
+    return {
+      rows: [],
+      citation: emptyCitation,
+      error: `entity scope not supported for table ${spec.table}`
+    };
+  }
+
+  try {
+    const { data: keyRows, error: keyError } = await client
+      .from("company_entity_map")
+      .select("source_key")
+      .eq("entity_id", entityId)
+      .eq("source_domain", sourceDomain)
+      .eq("source_table", spec.table)
+      .limit(spec.limit || MAX_CONTEXT_ROWS);
+
+    if (keyError) {
+      throw new Error(keyError.message || "failed to load entity map keys");
+    }
+
+    const sourceKeys = Array.from(
+      new Set(
+        (Array.isArray(keyRows) ? keyRows : [])
+          .map((row: any) => String(row?.source_key || "").trim())
+          .filter((value: string) => value !== "")
+      )
+    );
+
+    if (!sourceKeys.length) {
+      return {
+        rows: [],
+        citation: emptyCitation,
+        error: null
+      };
+    }
+
+    let query = client
+      .from(spec.table)
+      .select(spec.select)
+      .in(keyColumn, sourceKeys)
+      .limit(spec.limit || MAX_CONTEXT_ROWS);
+
+    if (spec.notNull) {
+      query = query.not(spec.notNull, "is", null);
+    }
+
+    if (spec.orderBy) {
+      query = query.order(spec.orderBy, { ascending: Boolean(spec.ascending) });
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(error.message || "unknown error");
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const citation: SourceCitation = {
+      id: spec.id,
+      table: spec.table,
+      domain: spec.domain,
+      fields: spec.fields,
+      row_count: rows.length,
+      note: spec.note
+    };
+
+    return { rows, citation, error: null };
+  } catch (error) {
+    return {
+      rows: [],
+      citation: emptyCitation,
+      error: String((error as Error)?.message || "failed to load entity-scoped table")
     };
   }
 }
@@ -1617,6 +1852,158 @@ async function buildReadOnlyServerContext(client: any, question: string, clientC
   };
 }
 
+async function buildEntityScopedServerContext(
+  client: any,
+  question: string,
+  strictServerOnly = true,
+  entityId: string
+) {
+  const detectedDomains = detectRequestedDomains(question);
+  const domains = {
+    finance: detectedDomains.finance,
+    operation: detectedDomains.operation,
+    market: false,
+    product: false
+  };
+  const intents = detectRequestedIntents(question);
+
+  if (!client || !isUuidLike(entityId)) {
+    return {
+      tool_layer: {
+        enabled: false,
+        mode: "allowlist-entity-scoped-v1",
+        reason: "Invalid scoped entity client/context",
+        strict_server_only: strictServerOnly,
+        entity_id: entityId || null,
+        domains_requested: domains,
+        intents_requested: intents
+      },
+      source_citations: [],
+      row_counts: {},
+      domains_requested: domains,
+      intents_requested: intents,
+      analytics: {
+        finance: null,
+        operation: null,
+        market: null,
+        product: null
+      },
+      focused_views: {
+        question,
+        intents,
+        views: {}
+      }
+    };
+  }
+
+  const requestedSpecs = ALLOWLIST_TABLES.filter((spec) => {
+    if (spec.domain === "finance") return domains.finance;
+    if (spec.domain === "operation") return domains.operation;
+    return false;
+  });
+
+  const loadResults = await Promise.all(
+    requestedSpecs.map((spec) => loadEntityScopedAllowlistedTable(client, spec, entityId))
+  );
+
+  const byId = new Map<string, any[]>();
+  const citations: SourceCitation[] = [];
+  const errors: Array<{ table_id: string; table: string; error: string }> = [];
+
+  loadResults.forEach((result, index) => {
+    const spec = requestedSpecs[index];
+    byId.set(spec.id, result.rows || []);
+    citations.push(result.citation);
+
+    if (result.error) {
+      errors.push({
+        table_id: spec.id,
+        table: spec.table,
+        error: result.error
+      });
+    }
+  });
+
+  const financeRows = byId.get("finance_invoices") || [];
+  const operationContracts = byId.get("operation_contracts") || [];
+  const operationLines = byId.get("operation_lines") || [];
+  const operationDeliveries = byId.get("operation_deliveries") || [];
+  const operationStock = byId.get("operation_stock") || [];
+
+  const financeMonthlyPerformance = buildFinanceMonthlyPerformance(financeRows, FINANCE_MONTH_WINDOW);
+  const financeTopByUsd = buildFinanceTopCustomers(financeRows, "usd", TOP_CUSTOMER_LIMIT);
+  const financeTopByTons = buildFinanceTopCustomers(financeRows, "tons", TOP_CUSTOMER_LIMIT);
+
+  const financeAnalytics = domains.finance
+    ? {
+        summary: buildFinanceSummary(financeRows),
+        monthly_performance: financeMonthlyPerformance,
+        monthly_highlights: buildFinanceMonthlyHighlights(financeMonthlyPerformance),
+        top_customers_by_usd: financeTopByUsd,
+        top_customers_by_tons: financeTopByTons
+      }
+    : null;
+
+  const operationSummary = buildOperationSummary(operationContracts, operationLines, operationDeliveries, operationStock);
+  const operationMonthly = buildOperationMonthlyPerformance(operationDeliveries, OPERATION_MONTH_WINDOW);
+  const operationTopCustomers = buildOperationTopCustomersByContractTons(
+    operationContracts,
+    operationLines,
+    operationDeliveries,
+    TOP_CUSTOMER_LIMIT
+  );
+
+  const operationAnalytics = domains.operation
+    ? {
+        summary: operationSummary,
+        monthly_delivery_performance: operationMonthly,
+        top_customers_by_contract_tons: operationTopCustomers,
+        overdue_by_customer: buildOperationOverdueByCustomer(
+          operationContracts,
+          operationLines,
+          operationDeliveries,
+          TOP_CUSTOMER_LIMIT
+        ),
+        stock_by_factory: buildOperationStockByFactory(operationStock, TOP_CUSTOMER_LIMIT),
+        stock_by_type: buildOperationStockByType(operationStock, TOP_CUSTOMER_LIMIT)
+      }
+    : null;
+
+  const rowCounts: Record<string, number> = {};
+  citations.forEach((citation) => {
+    rowCounts[citation.id] = citation.row_count;
+  });
+
+  const analytics = {
+    finance: financeAnalytics,
+    operation: operationAnalytics,
+    market: null,
+    product: null
+  };
+
+  const focusedViews = buildFocusedViews(question, intents, analytics);
+
+  return {
+    tool_layer: {
+      enabled: true,
+      mode: "allowlist-entity-scoped-v1",
+      strict_server_only: strictServerOnly,
+      entity_id: entityId,
+      channel: INTERNAL_LINE_CHANNEL,
+      domains_requested: domains,
+      intents_requested: intents,
+      tables_used: citations.map((citation) => citation.id),
+      errors
+    },
+    source_citations: citations,
+    row_counts: rowCounts,
+    domains_requested: domains,
+    intents_requested: intents,
+    focused_views: focusedViews,
+    analytics
+  };
+}
+
 function mergeContext(clientContext: unknown, serverContext: any, strictServerOnly = false) {
   const defaultUniversePolicy = {
     market: "external",
@@ -1962,18 +2349,33 @@ Deno.serve(async (req: Request) => {
       return toJson({ error: "prompt or messages is required" }, 400);
     }
 
-    const authState = await authenticateRequest(req);
+    const authState = await authenticateRequest(req, body);
     if (authState.error || !authState.client || !authState.user) {
-      const status = authState.error === "SUPABASE_URL or SUPABASE_ANON_KEY is not configured" ? 500 : 401;
+      const status =
+        authState.error === "SUPABASE_URL or SUPABASE_ANON_KEY is not configured" ||
+        authState.error === "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured"
+          ? 500
+          : 401;
       return toJson({ error: authState.error || "Unauthorized" }, status);
     }
 
     const question = getLatestUserQuestion(prompt, messages);
     const requestId = crypto.randomUUID();
     const expectsJson = isJsonRequested(question);
+    const isLineInternalMode = authState.auth_mode === "line_internal";
+    if (isLineInternalMode && isCompanyDetailMode) {
+      return toJson({ error: "company_detail mode is not supported for line internal scope" }, 400);
+    }
     const readOnlyServerContext = isCompanyDetailMode
       ? await buildCompanyDetailServerContext(authState.client, question, clientContext)
-      : await buildReadOnlyServerContext(authState.client, question, clientContext, strictServerOnly);
+      : isLineInternalMode && authState.scoped_entity_id
+        ? await buildEntityScopedServerContext(
+            authState.client,
+            question,
+            strictServerOnly,
+            authState.scoped_entity_id
+          )
+        : await buildReadOnlyServerContext(authState.client, question, clientContext, strictServerOnly);
     const mergedContext = mergeContext(clientContext, readOnlyServerContext, strictServerOnly);
 
     const companySourceRule = strictServerOnly
@@ -1982,6 +2384,10 @@ Deno.serve(async (req: Request) => {
     const defaultSourceRule = strictServerOnly
       ? "Use only server_context.analytics and server_context.focused_views as factual source. Ignore client_context for business facts."
       : "Use server_context.analytics as primary source of truth and client_context as supplementary context.";
+    const lineInternalRule = isLineInternalMode
+      ? "This request comes from LINE private chat. Available domains are operation and finance only for a single scoped entity. " +
+        "Do not answer with market or product data in this channel. If user asks those domains, say they are unavailable in current LINE scope."
+      : "";
     const productScopeRule = strictServerOnly
       ? "Use product rows exactly as provided in server_context."
       : "Product rows in server_context are pre-filtered by the web catalog scope from client_context.product_scope.";
@@ -2004,10 +2410,12 @@ Deno.serve(async (req: Request) => {
         "Keep answers concise, practical, and numeric when possible. " +
         "Always include explicit period labels when discussing trends. " +
         "Do not include source tags/citation blocks unless explicitly requested by user. " +
+        lineInternalRule + " " +
         jsonOutputRule + " " +
         "If data is insufficient, state exactly which section in server_context.analytics.company_detail is missing."
       : "You are a business analyst for a dashboard with four domains: market (external), operation (internal), finance (internal), and product (internal). " +
         defaultSourceRule + " " +
+        lineInternalRule + " " +
         "Prioritize server_context.focused_views according to server_context.intents_requested for this question. " +
         "Use only views relevant to the detected intent unless user explicitly asks cross-intent comparison. " +
         "Keep answers minimalist and concise, focusing only on the requested output. " +
@@ -2095,9 +2503,10 @@ Deno.serve(async (req: Request) => {
 
     const generatedAt = new Date().toISOString();
     const latencyMs = Math.max(0, Date.now() - requestStartedAt);
-    await writeAiTelemetryEvent(authState.client, {
+    const telemetryPayload: Record<string, unknown> = {
       request_id: requestId,
       request_mode: requestMode,
+      user_id: authState.user.id,
       model,
       strict_server_only: strictServerOnly,
       question: trimText(question, 1200),
@@ -2109,7 +2518,11 @@ Deno.serve(async (req: Request) => {
       continuation_rounds: continuationRounds,
       provider_error: providerError,
       latency_ms: latencyMs
-    });
+    };
+    if (authState.scoped_entity_id) {
+      telemetryPayload.entity_id = authState.scoped_entity_id;
+    }
+    await writeAiTelemetryEvent(authState.client, telemetryPayload);
 
     return toJson({
       request_id: requestId,
