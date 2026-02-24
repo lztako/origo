@@ -19,9 +19,7 @@ const elements = {
 const LINE_AUTH_QUERY_KEY = "line_auth";
 const FORCE_LOGIN_QUERY_KEY = "force_login";
 const LINE_APP_FALLBACK_URL = "https://line.me/R/";
-const AUTO_RETURN_DELAY_MS = 900;
 const LINE_APP_REDIRECT_DELAY_MS = 120;
-let autoReturnScheduled = false;
 
 if (!runtimeConfig.ready) {
   throw new Error(runtimeConfig.errorMessage || "Supabase environment is not configured.");
@@ -131,14 +129,6 @@ function returnToLineChat() {
       window.location.href = LINE_APP_FALLBACK_URL;
     }
   }, LINE_APP_REDIRECT_DELAY_MS);
-}
-
-function scheduleAutoReturnToLine() {
-  if (autoReturnScheduled) return;
-  autoReturnScheduled = true;
-  window.setTimeout(() => {
-    returnToLineChat();
-  }, AUTO_RETURN_DELAY_MS);
 }
 
 function mapRpcErrorToMessage(error) {
@@ -255,12 +245,11 @@ async function initLineLinkPage() {
     setStatus("เชื่อมบัญชี LINE OA สำเร็จแล้ว", "success");
     setDetail(
       entityName
-        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว กำลังพากลับไปแชท LINE`
-        : "เชื่อมบัญชีเรียบร้อยแล้ว กำลังพากลับไปแชท LINE"
+        ? `เชื่อมกับบริษัท ${entityName} เรียบร้อยแล้ว กดปุ่มด้านล่างเพื่อกลับไปแชท LINE`
+        : "เชื่อมบัญชีเรียบร้อยแล้ว กดปุ่มด้านล่างเพื่อกลับไปแชท LINE"
     );
     clearTokenFromUrl();
     setReturnButtonEnabled(true);
-    scheduleAutoReturnToLine();
   } catch (error) {
     console.error("[line-link] consume token failed:", error);
     setLead("เชื่อมบัญชีไม่สำเร็จ");
