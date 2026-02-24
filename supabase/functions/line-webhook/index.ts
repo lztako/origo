@@ -774,6 +774,42 @@ async function sendLineLoadingIndicator(channelAccessToken: string, lineUserId: 
   }
 }
 
+function getLineLoadingRefreshMs(): number {
+  const loadingSeconds = getLineLoadingSeconds();
+  const refreshSeconds = Math.max(MIN_LINE_LOADING_SECONDS, loadingSeconds - 2);
+  return refreshSeconds * 1000;
+}
+
+function startLineLoadingLoop(channelAccessToken: string, lineUserId: string): () => void {
+  if (!getEnvBoolean("LINE_LOADING_ENABLED", true)) {
+    return () => {};
+  }
+
+  const refreshMs = getLineLoadingRefreshMs();
+  let stopped = false;
+  let inFlight = false;
+
+  const tick = async () => {
+    if (stopped || inFlight) return;
+    inFlight = true;
+    try {
+      await sendLineLoadingIndicator(channelAccessToken, lineUserId);
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void tick();
+  const timerId = setInterval(() => {
+    void tick();
+  }, refreshMs);
+
+  return () => {
+    stopped = true;
+    clearInterval(timerId);
+  };
+}
+
 async function decideReply(adminClient: any, lineUserId: string, inboundText: string, linkContext: LinkContext): Promise<ReplyDecision> {
   const command = parseCommand(inboundText);
 
@@ -1089,13 +1125,18 @@ Deno.serve(async (req: Request) => {
         linkContext.active?.entity_id &&
         linkContext.active?.user_id
       ) {
-        await sendLineLoadingIndicator(channelAccessToken, lineUserId);
-        const aiReply = await callAiAgentForLine({
-          question: inboundText,
-          lineUserId,
-          entityId: linkContext.active.entity_id,
-          userId: linkContext.active.user_id
-        });
+        const stopLoadingLoop = startLineLoadingLoop(channelAccessToken, lineUserId);
+        let aiReply: AiLineReply;
+        try {
+          aiReply = await callAiAgentForLine({
+            question: inboundText,
+            lineUserId,
+            entityId: linkContext.active.entity_id,
+            userId: linkContext.active.user_id
+          });
+        } finally {
+          stopLoadingLoop();
+        }
         replyDecision = {
           text: aiReply.answer,
           entityId: linkContext.active.entity_id,
