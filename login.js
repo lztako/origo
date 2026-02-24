@@ -16,6 +16,7 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
   : FALLBACK_RUNTIME_CONFIG;
 
 const explicitEnvKey = resolveQueryEnvKey();
+const forceLogin = resolveForceLoginFlag();
 const envConfigs = resolveEnvConfigs();
 const envClients = new Map();
 
@@ -36,6 +37,16 @@ function normalizeEnvKey(value) {
 function resolveQueryEnvKey() {
   const params = new URLSearchParams(window.location.search);
   return normalizeEnvKey(params.get("env"));
+}
+
+function isTruthyQueryFlag(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function resolveForceLoginFlag() {
+  const params = new URLSearchParams(window.location.search);
+  return isTruthyQueryFlag(params.get("force_login"));
 }
 
 function isSupabaseConfigReady(entry) {
@@ -245,6 +256,16 @@ async function redirectIfAuthenticated(nextPath) {
   return false;
 }
 
+async function clearAllSessions() {
+  const tasks = [];
+  for (const envKey of ENV_PRIORITY) {
+    const client = getSupabaseClient(envKey);
+    if (!client) continue;
+    tasks.push(client.auth.signOut().catch(() => {}));
+  }
+  await Promise.all(tasks);
+}
+
 function isInvalidCredentialError(error) {
   const status = Number(error?.status || error?.statusCode || 0);
   const message = String(error?.message || "").toLowerCase();
@@ -376,8 +397,16 @@ async function initLogin() {
     return;
   }
 
-  const redirected = await redirectIfAuthenticated(nextPath);
+  if (forceLogin) {
+    await clearAllSessions();
+  }
+
+  const redirected = forceLogin ? false : await redirectIfAuthenticated(nextPath);
   if (redirected) return;
+
+  if (forceLogin) {
+    setStatus("Please sign in to continue.");
+  }
 
   elements.form?.addEventListener("submit", handleLoginSubmit);
 }

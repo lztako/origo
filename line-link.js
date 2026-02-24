@@ -19,6 +19,9 @@ const elements = {
   openDashboardBtn: document.getElementById("lineLinkOpenDashboardBtn")
 };
 
+const LINE_AUTH_QUERY_KEY = "line_auth";
+const FORCE_LOGIN_QUERY_KEY = "force_login";
+
 const appendEnvToPath = typeof runtimeConfig.appendEnvToPath === "function"
   ? runtimeConfig.appendEnvToPath
   : (path) => String(path || "");
@@ -57,6 +60,15 @@ function getQueryParam(name) {
   return String(params.get(name) || "").trim();
 }
 
+function isTruthyQueryFlag(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function hasLineAuthFlag() {
+  return isTruthyQueryFlag(getQueryParam(LINE_AUTH_QUERY_KEY));
+}
+
 function normalizeToken(value) {
   return String(value || "")
     .trim()
@@ -69,8 +81,17 @@ function buildLoginUrlWithNext() {
   const fileName = pathName.endsWith("/")
     ? "line-link.html"
     : (pathName.split("/").pop() || "line-link.html");
-  const nextPath = `${fileName}${window.location.search || ""}`;
-  return appendEnvToPath(`login.html?next=${encodeURIComponent(nextPath)}`);
+  const nextParams = new URLSearchParams(window.location.search);
+  nextParams.set(LINE_AUTH_QUERY_KEY, "1");
+  nextParams.delete(FORCE_LOGIN_QUERY_KEY);
+  const nextPath = nextParams.toString()
+    ? `${fileName}?${nextParams.toString()}`
+    : fileName;
+
+  const loginParams = new URLSearchParams();
+  loginParams.set(FORCE_LOGIN_QUERY_KEY, "1");
+  loginParams.set("next", nextPath);
+  return appendEnvToPath(`login.html?${loginParams.toString()}`);
 }
 
 function redirectToLoginPage() {
@@ -155,6 +176,8 @@ function clearTokenFromUrl() {
   try {
     const url = new URL(window.location.href);
     url.searchParams.delete("token");
+    url.searchParams.delete(LINE_AUTH_QUERY_KEY);
+    url.searchParams.delete(FORCE_LOGIN_QUERY_KEY);
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
   } catch (_error) {
     // Ignore URL cleanup failures.
@@ -171,6 +194,11 @@ async function initLineLinkPage() {
     setLead("ไม่พบ token สำหรับเชื่อมบัญชี");
     setStatus("ลิงก์นี้ไม่ถูกต้อง กรุณาพิมพ์ `เริ่มใช้งาน` ใน LINE OA เพื่อรับลิงก์ใหม่", "error");
     setDetail("Missing link token");
+    return;
+  }
+
+  if (!hasLineAuthFlag()) {
+    redirectToLoginPage();
     return;
   }
 
