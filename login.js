@@ -15,7 +15,7 @@ const runtimeConfig = typeof window.getSupabaseRuntimeConfig === "function"
   ? window.getSupabaseRuntimeConfig()
   : FALLBACK_RUNTIME_CONFIG;
 
-const explicitEnvKey = resolveQueryEnvKey();
+const explicitEnvKey = "";
 const forceLogin = resolveForceLoginFlag();
 const envConfigs = resolveEnvConfigs();
 const envClients = new Map();
@@ -47,6 +47,18 @@ function isTruthyQueryFlag(value) {
 function resolveForceLoginFlag() {
   const params = new URLSearchParams(window.location.search);
   return isTruthyQueryFlag(params.get("force_login"));
+}
+
+function stripEnvQueryParamForProdEntry() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("env")) return;
+    url.searchParams.delete("env");
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, document.title, nextUrl);
+  } catch (_error) {
+    // Ignore URL cleanup failures.
+  }
 }
 
 function isSupabaseConfigReady(entry) {
@@ -382,6 +394,7 @@ async function handleLoginSubmit(event) {
 }
 
 async function initLogin() {
+  stripEnvQueryParamForProdEntry();
   const nextPath = resolveNextPath();
   renderEnvironmentLabel();
 
