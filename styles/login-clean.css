@@ -1,5 +1,6 @@
 :root {
   --bg: #0a0d0b;
+  --panel: #111814;
   --panel-border: #1f2d25;
   --text: #e8f3eb;
   --text-muted: #8ca697;
@@ -30,11 +31,11 @@ body.login-modern {
 }
 
 .login-modern-card {
-  width: min(430px, 100%);
+  width: min(440px, 100%);
   border: 1px solid var(--panel-border);
-  border-radius: 1rem;
-  background: linear-gradient(180deg, rgba(19, 28, 22, 0.95), rgba(16, 22, 18, 0.9));
-  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.38);
+  border-radius: 0.9rem;
+  background: var(--panel);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
   padding: 1.3rem 1.35rem;
 }
 
@@ -140,6 +141,30 @@ body.login-modern {
 
 .login-status.success {
   color: #9ee6bf;
+}
+
+:root[data-theme="mono"] .login-modern-card {
+  background: linear-gradient(180deg, rgba(26, 31, 40, 0.96), rgba(21, 25, 33, 0.92));
+}
+
+:root[data-theme="mono"] .login-field input {
+  border-color: #4d5563;
+  background: rgba(24, 28, 36, 0.92);
+}
+
+:root[data-theme="mono"] .login-field input:focus {
+  border-color: #cfd4dc;
+  box-shadow: 0 0 0 3px rgba(207, 212, 220, 0.14);
+  background: rgba(27, 33, 44, 0.95);
+}
+
+:root[data-theme="mono"] .login-submit-btn {
+  border-color: #4d5563;
+  background: #252b36;
+}
+
+:root[data-theme="mono"] .login-submit-btn:hover {
+  border-color: #cfd4dc;
 }
 
 @media (max-width: 480px) {
