@@ -93,10 +93,13 @@
   const queryEnvKey = normalizeEnvKey(params.get("env"));
   const storedEnvKey = readStoredEnvKey();
   const defaultEnvKey = normalizeEnvKey(window.__SUPABASE_DEFAULT_ENV__) || "prod";
-  const activeEnvKey = queryEnvKey || storedEnvKey || defaultEnvKey;
+  const activeEnvKey = queryEnvKey || defaultEnvKey;
 
   if (queryEnvKey) {
     writeStoredEnvKey(queryEnvKey);
+  } else if (storedEnvKey && storedEnvKey !== defaultEnvKey) {
+    // Prevent stale demo preference from leaking into normal (no-query) entry paths.
+    writeStoredEnvKey(defaultEnvKey);
   }
 
   function buildEnvRuntime(envKey) {
@@ -129,7 +132,7 @@
   }
 
   const activeRuntime = envRuntimeMap[activeEnvKey] || envRuntimeMap.prod;
-  const activeSource = queryEnvKey ? "query" : (storedEnvKey ? "storage" : "default");
+  const activeSource = queryEnvKey ? "query" : "default";
 
   const runtimeConfig = {
     ...activeRuntime,

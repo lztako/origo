@@ -174,6 +174,7 @@ function getLoginEnvOrder() {
   const available = ENV_PRIORITY.filter((envKey) => envConfigs[envKey]?.ready);
   if (!available.length) return [];
   if (explicitEnvKey) return available.filter((envKey) => envKey === explicitEnvKey);
+  if (envConfigs.prod?.ready) return ["prod"];
   return available;
 }
 
@@ -187,15 +188,12 @@ function renderEnvironmentLabel() {
     return;
   }
 
-  const parts = [];
-  if (envConfigs.prod?.ready) parts.push("PROD");
-  if (envConfigs.demo?.ready) parts.push("DEMO");
-  if (!parts.length) {
+  if (!envConfigs.prod?.ready) {
     elements.environment.textContent = "Environment: unavailable";
     return;
   }
 
-  elements.environment.textContent = `Environment: AUTO (${parts.join(" -> ")})`;
+  elements.environment.textContent = "Environment: PROD";
 }
 
 function setStatus(message, type = "info") {
@@ -317,7 +315,7 @@ async function attemptStrictLogin(nextPath, email, password, envKey) {
 }
 
 async function attemptAutoLogin(nextPath, email, password) {
-  const autoOrder = ENV_PRIORITY.filter((envKey) => envConfigs[envKey]?.ready);
+  const autoOrder = getLoginEnvOrder();
   if (!autoOrder.length) {
     throw Object.assign(new Error("Supabase environment is not configured."), { envKey: "" });
   }
